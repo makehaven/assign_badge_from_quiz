@@ -1,0 +1,6 @@
+{
+    "name": "makehaven/assign_badge_from_quiz",
+    "type": "drupal-custom-module",
+    "description": "Provides a custom Rules action to assign a badge based on quiz results.",
+    "license": "GPL-2.0-or-later"
+}
