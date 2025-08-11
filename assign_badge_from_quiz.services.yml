@@ -1,0 +1,11 @@
+services:
+  assign_badge_from_quiz.display_builder:
+    class: Drupal\assign_badge_from_quiz\QuizResultDisplayBuilder
+    arguments: ['@logger.factory']
+
+  assign_badge_from_quiz.quiz_result_subscriber:
+    class: Drupal\assign_badge_from_quiz\EventSubscriber\QuizResultPageSubscriber
+    # REMOVE '@renderer' from this list
+    arguments: ['@current_route_match', '@assign_badge_from_quiz.display_builder']
+    tags:
+      - { name: event_subscriber }
