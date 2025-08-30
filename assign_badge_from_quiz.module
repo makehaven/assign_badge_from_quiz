@@ -1,58 +1,13 @@
 <?php
 
-use Drupal\taxonomy\Entity\Term;
-use Drupal\node\Entity\Node;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Hook\Attribute\LegacyHook;
+use Drupal\assign_badge_from_quiz\Hook\QuizResultHook;
 
 /**
  * Implements hook_ENTITY_TYPE_update().
  */
+#[LegacyHook]
 function assign_badge_from_quiz_entity_update(EntityInterface $entity) {
-  if ($entity instanceof \Drupal\quiz\Entity\QuizResult) {
-    // Retrieve relevant fields.
-    $quiz_id = $entity->get('qid')->target_id;
-    $score = $entity->get('score')->value;
-    $user_id = $entity->get('uid')->target_id;
-
-    // --- REMOVED MESSENGER NOTIFICATION ---
-    // \Drupal::messenger()->addMessage("Your quiz score: " . $score . "%", "status");
-
-    // Process badge request if the score is a perfect 100.
-    if ($score == 100) {
-      // Load the badge taxonomy terms to find the one associated with this quiz.
-      $terms = \Drupal::entityTypeManager()->getStorage('taxonomy_term')->loadByProperties([
-        'vid' => 'badges',
-        'field_badge_quiz_reference' => $quiz_id,
-      ]);
-      
-      if (!empty($terms)) {
-        $badge_term = reset($terms);
-        $badge_name = $badge_term->getName();
-        
-        // Determine checkout requirements.
-        $checkout_requirement = $badge_term->hasField('field_badge_checkout_requirement') ? $badge_term->get('field_badge_checkout_requirement')->value : 'no';
-        $status = ($checkout_requirement == 'yes' || $checkout_requirement == 'class') ? 'pending' : 'active';
-
-        // Create a badge_request node.
-        $badge_request = Node::create([
-          'type' => 'badge_request',
-          'title' => "Badge Request for $badge_name by User $user_id",
-          'field_badge_requested' => ['target_id' => $badge_term->id()],
-          'field_badge_status' => $status,
-          'field_member_to_badge' => ['target_id' => $user_id],
-        ]);
-        $badge_request->save();
-
-        // --- REMOVED MESSENGER NOTIFICATION ---
-        // \Drupal::messenger()->addMessage("Badge request created for $badge_name", "status");
-
-        // The special case for the orientation quiz can remain if needed,
-        // but consider making this a configurable field on the badge itself.
-        if ($quiz_id == 1) {
-            $message = "<a href='/schedule' class='btn btn-primary btn-lg' style='font-size: 1.5rem; padding: 15px 30px; border-radius: 10px;'>Schedule Your Orientation Session</a>";
-            \Drupal::messenger()->addMessage($message, "status");
-        }
-      }
-    }
-  }
+  \Drupal::service(QuizResultHook::class)->entityUpdate($entity);
 }

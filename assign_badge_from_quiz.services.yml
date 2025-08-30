@@ -1,4 +1,8 @@
 services:
+  Drupal\assign_badge_from_quiz\Hook\QuizResultHook:
+    class: Drupal\assign_badge_from_quiz\Hook\QuizResultHook
+    autowire: true
+
   assign_badge_from_quiz.display_builder:
     class: Drupal\assign_badge_from_quiz\QuizResultDisplayBuilder
     arguments: ['@logger.factory']
