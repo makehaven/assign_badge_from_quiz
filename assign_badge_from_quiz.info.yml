@@ -2,7 +2,7 @@ name: 'Assign Badge From Quiz'
 type: module
 description: 'Provides a custom Rules action to assign a badge based on quiz results.'
 package: Custom
-core_version_requirement: ^10
+core_version_requirement: ^10 || ^11
 dependencies:
   - rules:rules
 version: 1.0
