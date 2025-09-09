@@ -12,8 +12,8 @@ assign_badge_from_quiz.settings:
       label: 'HTML templates by type'
       mapping:
         badge_quiz:
-          type: text
+          type: text_format
           label: 'HTML for badge_quiz'
         quiz:
-          type: text
+          type: text_format
           label: 'HTML for quiz'

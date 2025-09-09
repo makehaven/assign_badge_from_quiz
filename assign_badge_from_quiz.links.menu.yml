@@ -1,5 +1,5 @@
 assign_badge_from_quiz.settings:
-  title: 'Post-quiz message by type'
+  title: 'Quiz Badge Assign Configuration'
   description: 'Configure the custom message shown above normal quiz results.'
   route_name: assign_badge_from_quiz.settings
   parent: system.admin_config_content

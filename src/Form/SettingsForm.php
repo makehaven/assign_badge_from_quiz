@@ -16,7 +16,17 @@ final class SettingsForm extends ConfigFormBase {
 
     $form['help'] = [
       '#type' => 'item',
-      '#markup' => $this->t('<p>This message appears <strong>above</strong> the normal quiz results only when the quiz node has the required taxonomy reference (same field used by the badge assignment logic) and a badge is present. If those conditions are not met, only the normal results appear.</p><p><strong>Tokens:</strong> [quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [site:base_url]</p>'),
+      '#markup' => $this->t(
+        '<p>This message appears above the normal quiz results (the normal results are not suppressed).</p>' .
+        '<p>It only shows when:<ul>' .
+        '<li>The quiz type is enabled below,</li>' .
+        '<li>The quiz node has the required taxonomy reference (the same field used by the badge assignment logic), and</li>' .
+        '<li>A badge is present/assigned for that quiz.</li></ul></p>' .
+        '<p>If these conditions are not met, only the standard quiz results appear.</p>' .
+        '<p><strong>Available tokens:</strong><br>' .
+        '[quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [site:base_url]<br>' .
+        '(Missing tokens resolve to empty.)</p>'
+      ),
     ];
 
     $types = ['badge_quiz' => 'badge_quiz', 'quiz' => 'quiz'];

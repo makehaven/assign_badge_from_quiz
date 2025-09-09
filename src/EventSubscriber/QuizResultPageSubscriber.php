@@ -11,6 +11,7 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Url;
 use Drupal\quiz\Entity\QuizResult;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ViewEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 
@@ -51,6 +52,9 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
     }
 
     $controller_result = $event->getControllerResult();
+    if ($controller_result instanceof Response) {
+      return;
+    }
     if (!is_array($controller_result)) {
       return;
     }

@@ -23,8 +23,8 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
     // Require badge.
     if (empty($ctx['badge'])) return NULL;
 
-    $template_data = $templates[$type] ?? [];
-    $tpl = $template_data['value'] ?? '';
+    $tplRaw = $templates[$type] ?? '';
+    $tpl = is_array($tplRaw) ? (string) ($tplRaw['value'] ?? '') : (string) $tplRaw;
     if ($tpl === '') return NULL;
 
     $r = [
