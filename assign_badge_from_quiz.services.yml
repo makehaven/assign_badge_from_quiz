@@ -7,9 +7,18 @@ services:
     class: Drupal\assign_badge_from_quiz\QuizResultDisplayBuilder
     arguments: ['@logger.factory']
 
+  assign_badge_from_quiz.post_quiz_renderer:
+    class: Drupal\assign_badge_from_quiz\Service\PostQuizRenderer
+    arguments: ['@config.factory']
+
   assign_badge_from_quiz.quiz_result_subscriber:
     class: Drupal\assign_badge_from_quiz\EventSubscriber\QuizResultPageSubscriber
-    # REMOVE '@renderer' from this list
-    arguments: ['@current_route_match', '@assign_badge_from_quiz.display_builder']
+    arguments:
+      - '@current_route_match'
+      - '@assign_badge_from_quiz.post_quiz_renderer'
+      - '@assign_badge_from_quiz.display_builder'
+      - '@current_user'
+      - '@entity_type.manager'
+      - '@config.factory'
     tags:
       - { name: event_subscriber }

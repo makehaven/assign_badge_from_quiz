@@ -1,0 +1,7 @@
+assign_badge_from_quiz.settings:
+  path: '/admin/config/makehaven/assign-badge-from-quiz'
+  defaults:
+    _form: '\Drupal\assign_badge_from_quiz\Form\SettingsForm'
+    _title: 'Quiz Badge Assign Configuration'
+  requirements:
+    _permission: 'administer site configuration'
