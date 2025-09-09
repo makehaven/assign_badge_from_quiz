@@ -39,12 +39,12 @@ final class SettingsForm extends ConfigFormBase {
     ];
 
     foreach ($types as $type_key => $label) {
-      $visible = in_array($type_key, $enabled, TRUE) || ($form_state->getValue(['enabled_types', $type_key]) === $type_key);
+      $template = $templates[$type_key] ?? [];
       $form['html_templates_'.$type_key] = [
         '#type' => 'text_format',
         '#title' => $this->t('HTML for @type', ['@type' => $type_key]),
-        '#format' => 'full_html',
-        '#default_value' => $templates[$type_key]['value'] ?? '',
+        '#format' => $template['format'] ?? 'full_html',
+        '#default_value' => $template['value'] ?? '',
         '#states' => [
           'visible' => [
             ':input[name="enabled_types['.$type_key.']"]' => ['checked' => TRUE],
