@@ -35,7 +35,7 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkboxes',
       '#title' => $this->t('Show custom message for these quiz types'),
       '#options' => $types,
-      '#default_value' => array_combine($enabled, $enabled),
+      '#default_value' => $enabled,
     ];
 
     foreach ($types as $type_key => $label) {
@@ -53,12 +53,16 @@ final class SettingsForm extends ConfigFormBase {
       ];
     }
 
+    $form['show_badge_details'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Display detailed badge information (including facilitator schedule) below the custom message.'),
+        '#default_value' => $cfg->get('show_badge_details'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
   public function submitForm(array &$form, FormStateInterface $form_state): void {
-    parent::submitForm($form, $form_state);
-
     $enabled_raw = $form_state->getValue('enabled_types') ?? [];
     $enabled = array_values(array_filter(array_map(function($k,$v){ return $v ? $k : NULL; }, array_keys($enabled_raw), $enabled_raw)));
 
@@ -73,9 +77,12 @@ final class SettingsForm extends ConfigFormBase {
       }
     }
 
-    $this->configFactory()->getEditable('assign_badge_from_quiz.settings')
+    $this->config('assign_badge_from_quiz.settings')
       ->set('enabled_types', $enabled)
       ->set('html_templates', $templates)
+      ->set('show_badge_details', (bool)$form_state->getValue('show_badge_details'))
       ->save();
+
+    parent::submitForm($form, $form_state);
   }
 }

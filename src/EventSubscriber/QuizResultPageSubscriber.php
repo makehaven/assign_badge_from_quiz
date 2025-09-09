@@ -2,10 +2,10 @@
 
 namespace Drupal\assign_badge_from_quiz\EventSubscriber;
 
+use Drupal\assign_badge_from_quiz\QuizResultDisplayBuilder;
 use Drupal\assign_badge_from_quiz\Service\PostQuizRenderer;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Url;
@@ -20,17 +20,14 @@ use Symfony\Component\HttpKernel\KernelEvents;
  */
 final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
-  private readonly LoggerChannelInterface $logger;
-
   public function __construct(
     private readonly RouteMatchInterface $routeMatch,
     private readonly PostQuizRenderer $postQuizRenderer,
+    private readonly QuizResultDisplayBuilder $displayBuilder,
     private readonly AccountProxyInterface $currentUser,
     private readonly EntityTypeManagerInterface $entityTypeManager,
-    LoggerChannelFactoryInterface $loggerFactory,
-  ) {
-    $this->logger = $loggerFactory->get('assign_badge_from_quiz');
-  }
+    private readonly ConfigFactoryInterface $configFactory,
+  ) {}
 
   public static function getSubscribedEvents(): array {
     return [KernelEvents::VIEW => ['onView', 100]];
@@ -46,24 +43,19 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    // The custom message should only appear for passing scores.
     if ((int) $quiz_result->get('score')->value !== 100) {
       return;
     }
 
     $controller_result = $event->getControllerResult();
-    if ($controller_result instanceof Response) {
-      return;
-    }
-    if (!is_array($controller_result)) {
+    if ($controller_result instanceof Response || !is_array($controller_result)) {
       return;
     }
 
     $quiz = $quiz_result->getQuiz();
     $quiz_nid = $quiz->id();
-    $quiz_type = $quiz->bundle();
 
-    // Logic to find the related badge term, adapted from QuizResultDisplayBuilder.
+    // Logic to find the related badge term.
     $term_ids = $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
       ->condition('vid', 'badges')
       ->condition('field_badge_quiz_reference', $quiz_nid)
@@ -82,22 +74,31 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
     $context = [
       'quiz_nid' => $quiz_nid,
       'quiz_title' => $quiz->label(),
-      'quiz_type' => $quiz_type,
+      'quiz_type' => $quiz->bundle(),
       'has_related_term' => $has_related_term,
       'user' => [
         'uid' => $this->currentUser->id(),
         'display_name' => $user_account->getDisplayName(),
       ],
-      'badge' => $badge_term ? [
-        'nid' => $badge_term->id(),
-        'title' => $badge_term->label(),
-      ] : null,
+      'badge' => $badge_term ? ['nid' => $badge_term->id(), 'title' => $badge_term->label()] : null,
       'base_url' => Url::fromRoute('<front>', [], ['absolute' => TRUE])->toString(),
     ];
 
+    // Add the custom message.
     if ($custom_display = $this->postQuizRenderer->build($context)) {
       $controller_result['assign_badge_post_quiz_message'] = $custom_display;
-      $event->setControllerResult($controller_result);
     }
+
+    // Add the detailed badge display if enabled.
+    $config = $this->configFactory->get('assign_badge_from_quiz.settings');
+    if ($config->get('show_badge_details')) {
+      $badge_details_render_array = $this->displayBuilder->build($quiz_result);
+      // The builder returns a full display. We only want the details, not the
+      // generic "congrats" message which is now in the configurable template.
+      unset($badge_details_render_array['congrats_message']);
+      $controller_result['assign_badge_details'] = $badge_details_render_array;
+    }
+
+    $event->setControllerResult($controller_result);
   }
 }

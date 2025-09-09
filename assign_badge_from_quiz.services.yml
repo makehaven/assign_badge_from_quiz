@@ -3,16 +3,22 @@ services:
     class: Drupal\assign_badge_from_quiz\Hook\QuizResultHook
     autowire: true
 
-  assign_badge_from_quiz.post_quiz_renderer:
-    class: Drupal\assign_badge_from_quiz\Service\PostQuizRenderer
-    arguments: ['@config.factory']
-
   assign_badge_from_quiz.display_builder:
     class: Drupal\assign_badge_from_quiz\QuizResultDisplayBuilder
     arguments: ['@logger.factory']
 
+  assign_badge_from_quiz.post_quiz_renderer:
+    class: Drupal\assign_badge_from_quiz\Service\PostQuizRenderer
+    arguments: ['@config.factory']
+
   assign_badge_from_quiz.quiz_result_subscriber:
     class: Drupal\assign_badge_from_quiz\EventSubscriber\QuizResultPageSubscriber
-    arguments: ['@current_route_match', '@assign_badge_from_quiz.post_quiz_renderer', '@current_user', '@entity_type.manager', '@logger.factory']
+    arguments:
+      - '@current_route_match'
+      - '@assign_badge_from_quiz.post_quiz_renderer'
+      - '@assign_badge_from_quiz.display_builder'
+      - '@current_user'
+      - '@entity_type.manager'
+      - '@config.factory'
     tags:
       - { name: event_subscriber }
