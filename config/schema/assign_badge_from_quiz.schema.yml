@@ -1,0 +1,19 @@
+assign_badge_from_quiz.settings:
+  type: config_object
+  label: 'Assign Badge From Quiz settings'
+  mapping:
+    enabled_types:
+      type: sequence
+      label: 'Enabled quiz types'
+      sequence:
+        type: string
+    html_templates:
+      type: mapping
+      label: 'HTML templates by type'
+      mapping:
+        badge_quiz:
+          type: text
+          label: 'HTML for badge_quiz'
+        quiz:
+          type: text
+          label: 'HTML for quiz'
