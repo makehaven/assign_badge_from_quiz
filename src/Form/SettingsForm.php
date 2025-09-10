@@ -13,6 +13,7 @@ final class SettingsForm extends ConfigFormBase {
     $cfg = $this->config('assign_badge_from_quiz.settings');
     $enabled = $cfg->get('enabled_types') ?: [];
     $templates = $cfg->get('html_templates') ?: [];
+    $show_details = $cfg->get('show_badge_details') ?: [];
 
     $form['help'] = [
       '#type' => 'item',
@@ -24,7 +25,7 @@ final class SettingsForm extends ConfigFormBase {
         '<li>A badge is present/assigned for that quiz.</li></ul></p>' .
         '<p>If these conditions are not met, only the standard quiz results appear.</p>' .
         '<p><strong>Available tokens:</strong><br>' .
-        '[quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [site:base_url]<br>' .
+        '[quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [site:base_url], [badge:checklist_url], [badge:checkout_minutes]<br>' .
         '(Missing tokens resolve to empty.)</p>'
       ),
     ];
@@ -38,13 +39,25 @@ final class SettingsForm extends ConfigFormBase {
       '#default_value' => $enabled,
     ];
 
+    $default_templates = [
+      'badge_quiz' =>
+        '<h2 style="color:#4CAF50;">Congratulations! You passed the quiz!</h2>' .
+        '<p>The next step is to complete a practical checkout with a facilitator to earn the <strong>[badge:title]</strong> badge.</p><hr>' .
+        '<a href="[badge:checklist_url]" class="btn btn-info" target="_blank" style="margin-right: 10px;">View Checkout Checklist</a>' .
+        '<p style="display: inline-block; margin-left: 15px;"><strong>Estimated time:</strong> [badge:checkout_minutes] minutes</p>' .
+        '<h3>Schedule Your Checkout</h3>',
+      'quiz' =>
+        '<h2 style="color:#4CAF50;">Congratulations! You passed the quiz!</h2>' .
+        '<p>You have earned the <strong>[badge:title]</strong> badge and can now use the associated tools.</p><hr>',
+    ];
+
     foreach ($types as $type_key => $label) {
       $template = $templates[$type_key] ?? [];
       $form['html_templates_'.$type_key] = [
         '#type' => 'text_format',
         '#title' => $this->t('HTML for @type', ['@type' => $type_key]),
         '#format' => $template['format'] ?? 'full_html',
-        '#default_value' => $template['value'] ?? '',
+        '#default_value' => $template['value'] ?? $default_templates[$type_key],
         '#states' => [
           'visible' => [
             ':input[name="enabled_types['.$type_key.']"]' => ['checked' => TRUE],
@@ -54,9 +67,10 @@ final class SettingsForm extends ConfigFormBase {
     }
 
     $form['show_badge_details'] = [
-        '#type' => 'checkbox',
-        '#title' => $this->t('Display detailed badge information (including facilitator schedule) below the custom message.'),
-        '#default_value' => $cfg->get('show_badge_details'),
+        '#type' => 'checkboxes',
+        '#title' => $this->t('For which quiz types should we show the facilitator schedule?'),
+        '#options' => $types,
+        '#default_value' => $show_details,
     ];
 
     return parent::buildForm($form, $form_state);
@@ -65,6 +79,9 @@ final class SettingsForm extends ConfigFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $enabled_raw = $form_state->getValue('enabled_types') ?? [];
     $enabled = array_values(array_filter(array_map(function($k,$v){ return $v ? $k : NULL; }, array_keys($enabled_raw), $enabled_raw)));
+
+    $show_details_raw = $form_state->getValue('show_badge_details') ?? [];
+    $show_details = array_values(array_filter(array_map(function($k,$v){ return $v ? $k : NULL; }, array_keys($show_details_raw), $show_details_raw)));
 
     $templates = [];
     foreach (['badge_quiz','quiz'] as $t) {
@@ -80,7 +97,7 @@ final class SettingsForm extends ConfigFormBase {
     $this->config('assign_badge_from_quiz.settings')
       ->set('enabled_types', $enabled)
       ->set('html_templates', $templates)
-      ->set('show_badge_details', (bool)$form_state->getValue('show_badge_details'))
+      ->set('show_badge_details', $show_details)
       ->save();
 
     parent::submitForm($form, $form_state);

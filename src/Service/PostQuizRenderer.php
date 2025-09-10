@@ -36,6 +36,8 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
       '[badge:nid]' => htmlspecialchars((string) ($ctx['badge']['nid'] ?? ''), ENT_QUOTES, 'UTF-8'),
       '[badge:title]' => htmlspecialchars((string) ($ctx['badge']['title'] ?? ''), ENT_QUOTES, 'UTF-8'),
       '[site:base_url]' => htmlspecialchars((string) ($ctx['base_url'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:checklist_url]' => htmlspecialchars((string) ($ctx['badge']['checklist_url'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:checkout_minutes]' => htmlspecialchars((string) ($ctx['badge']['checkout_minutes'] ?? ''), ENT_QUOTES, 'UTF-8'),
     ];
 
     $html = strtr($tpl, $r);

@@ -18,5 +18,7 @@ assign_badge_from_quiz.settings:
           type: text_format
           label: 'HTML for quiz'
     show_badge_details:
-      type: boolean
-      label: 'Show detailed badge information'
+      type: sequence
+      label: 'Show detailed badge information for these quiz types'
+      sequence:
+        type: string

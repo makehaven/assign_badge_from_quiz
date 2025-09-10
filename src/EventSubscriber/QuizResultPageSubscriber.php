@@ -54,6 +54,7 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
     $quiz = $quiz_result->getQuiz();
     $quiz_nid = $quiz->id();
+    $quiz_type = $quiz->bundle();
 
     // Logic to find the related badge term.
     $term_ids = $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
@@ -71,16 +72,32 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
     $user_account = $this->entityTypeManager->getStorage('user')->load($this->currentUser->id());
 
+    $badge_data = null;
+    if ($badge_term) {
+        $badge_data = [
+            'nid' => $badge_term->id(),
+            'title' => $badge_term->label(),
+            'checklist_url' => '',
+            'checkout_minutes' => '',
+        ];
+        if ($badge_term->hasField('field_badge_checklist') && !$badge_term->get('field_badge_checklist')->isEmpty()) {
+            $badge_data['checklist_url'] = $badge_term->get('field_badge_checklist')->first()->getUrl()->toString();
+        }
+        if ($badge_term->hasField('field_badge_checkout_minutes') && !$badge_term->get('field_badge_checkout_minutes')->isEmpty()) {
+            $badge_data['checkout_minutes'] = $badge_term->get('field_badge_checkout_minutes')->value;
+        }
+    }
+
     $context = [
       'quiz_nid' => $quiz_nid,
       'quiz_title' => $quiz->label(),
-      'quiz_type' => $quiz->bundle(),
+      'quiz_type' => $quiz_type,
       'has_related_term' => $has_related_term,
       'user' => [
         'uid' => $this->currentUser->id(),
         'display_name' => $user_account->getDisplayName(),
       ],
-      'badge' => $badge_term ? ['nid' => $badge_term->id(), 'title' => $badge_term->label()] : null,
+      'badge' => $badge_data,
       'base_url' => Url::fromRoute('<front>', [], ['absolute' => TRUE])->toString(),
     ];
 
@@ -91,12 +108,9 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
     // Add the detailed badge display if enabled.
     $config = $this->configFactory->get('assign_badge_from_quiz.settings');
-    if ($config->get('show_badge_details')) {
-      $badge_details_render_array = $this->displayBuilder->build($quiz_result);
-      // The builder returns a full display. We only want the details, not the
-      // generic "congrats" message which is now in the configurable template.
-      unset($badge_details_render_array['congrats_message']);
-      $controller_result['assign_badge_details'] = $badge_details_render_array;
+    $show_details_for_types = $config->get('show_badge_details') ?: [];
+    if ($badge_term && in_array($quiz_type, $show_details_for_types, TRUE)) {
+      $controller_result['assign_badge_facilitator_schedule'] = $this->displayBuilder->buildFacilitatorSchedule($badge_term);
     }
 
     $event->setControllerResult($controller_result);
