@@ -25,10 +25,11 @@ final class SettingsForm extends ConfigFormBase {
         '<li>A badge is present/assigned for that quiz.</li></ul></p>' .
         '<p>If these conditions are not met, only the standard quiz results appear.</p>' .
         '<p><strong>Available tokens:</strong><br>' .
-        '[quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [site:base_url], [badge:checklist_url], [badge:checkout_minutes]<br>' .
+        '[quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [badge:url], [site:base_url], [badge:checklist_url], [badge:checkout_minutes]<br>' .
         '<strong>Conditional tokens:</strong><br>' .
         '[if:badge_requires_checkout]...[/if:badge_requires_checkout]<br>' .
         '[if:badge_is_earned]...[/if:badge_is_earned]<br>' .
+        '[if:badge_has_checklist]...[/if:badge_has_checklist]<br>' .
         '(Missing tokens resolve to empty.)</p>'
       ),
     ];
@@ -46,12 +47,15 @@ final class SettingsForm extends ConfigFormBase {
       '<h2 style="color:#4CAF50;">Congratulations! You passed the quiz!</h2>' .
       '[if:badge_requires_checkout]' .
       '<p>The next step is to complete a practical checkout with a facilitator to earn the <strong>[badge:title]</strong> badge.</p><hr>' .
+      '[if:badge_has_checklist]' .
       '<a href="[badge:checklist_url]" class="btn btn-info" target="_blank" style="margin-right: 10px;">View Checkout Checklist</a>' .
+      '[/if:badge_has_checklist]' .
       '<p style="display: inline-block; margin-left: 15px;"><strong>Estimated time:</strong> [badge:checkout_minutes] minutes</p>' .
       '[/if:badge_requires_checkout]' .
       '[if:badge_is_earned]' .
       '<p>You have earned the <strong>[badge:title]</strong> badge and can now use the associated tools.</p><hr>' .
-      '[/if:badge_is_earned]';
+      '[/if:badge_is_earned]' .
+      '<a href="[badge:url]" class="btn btn-light" style="margin-right: 10px;">Return to [badge:title] Page</a>';
 
     foreach ($types as $type_key => $label) {
       $template = $templates[$type_key] ?? [];

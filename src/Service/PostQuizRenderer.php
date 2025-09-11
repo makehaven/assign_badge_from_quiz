@@ -35,6 +35,7 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
       '[user:display_name]' => htmlspecialchars((string) ($ctx['user']['display_name'] ?? ''), ENT_QUOTES, 'UTF-8'),
       '[badge:nid]' => htmlspecialchars((string) ($ctx['badge']['nid'] ?? ''), ENT_QUOTES, 'UTF-8'),
       '[badge:title]' => htmlspecialchars((string) ($ctx['badge']['title'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:url]' => htmlspecialchars((string) ($ctx['badge']['url'] ?? ''), ENT_QUOTES, 'UTF-8'),
       '[site:base_url]' => htmlspecialchars((string) ($ctx['base_url'] ?? ''), ENT_QUOTES, 'UTF-8'),
       '[badge:checklist_url]' => htmlspecialchars((string) ($ctx['badge']['checklist_url'] ?? ''), ENT_QUOTES, 'UTF-8'),
       '[badge:checkout_minutes]' => htmlspecialchars((string) ($ctx['badge']['checkout_minutes'] ?? ''), ENT_QUOTES, 'UTF-8'),
@@ -53,10 +54,12 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
 
   private function processConditionalTokens(string $html, array $ctx): string {
     $checkout_req = $ctx['badge']['checkout_requirement'] ?? 'no';
+    $has_checklist = $ctx['badge']['has_checklist'] ?? FALSE;
 
     $logic = [
       'badge_requires_checkout' => in_array($checkout_req, ['yes', 'class']),
       'badge_is_earned' => $checkout_req === 'no',
+      'badge_has_checklist' => $has_checklist,
     ];
 
     return preg_replace_callback(

@@ -74,15 +74,20 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
     $badge_data = null;
     if ($badge_term) {
+        $checklist_url = '';
+        if ($badge_term->hasField('field_badge_checklist') && !$badge_term->get('field_badge_checklist')->isEmpty()) {
+            $checklist_url = $badge_term->get('field_badge_checklist')->first()->getUrl()->toString();
+        }
+
         $badge_data = [
             'nid' => $badge_term->id(),
             'title' => $badge_term->label(),
-            'checklist_url' => '',
+            'url' => Url::fromRoute('entity.taxonomy_term.canonical', ['taxonomy_term' => $badge_term->id()])->toString(),
+            'checklist_url' => $checklist_url,
+            'has_checklist' => !empty($checklist_url),
             'checkout_minutes' => '',
         ];
-        if ($badge_term->hasField('field_badge_checklist') && !$badge_term->get('field_badge_checklist')->isEmpty()) {
-            $badge_data['checklist_url'] = $badge_term->get('field_badge_checklist')->first()->getUrl()->toString();
-        }
+
         if ($badge_term->hasField('field_badge_checkout_minutes') && !$badge_term->get('field_badge_checkout_minutes')->isEmpty()) {
             $badge_data['checkout_minutes'] = $badge_term->get('field_badge_checkout_minutes')->value;
         }
