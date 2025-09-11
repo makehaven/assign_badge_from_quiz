@@ -14,19 +14,20 @@ final class SettingsForm extends ConfigFormBase {
     $enabled = $cfg->get('enabled_types') ?: [];
     $templates = $cfg->get('html_templates') ?: [];
     $show_details = $cfg->get('show_badge_details') ?: [];
+    $failure_template = $cfg->get('failure_template') ?: [];
 
     $form['help'] = [
       '#type' => 'item',
       '#markup' => $this->t(
         '<p>This message appears above the normal quiz results (the normal results are not suppressed).</p>' .
         '<p>It only shows when:<ul>' .
-        '<li>The quiz type is enabled below,</li>' .
+        '<li>The quiz type is enabled below (for success messages),</li>' .
         '<li>The quiz node has the required taxonomy reference (the same field used by the badge assignment logic), and</li>' .
         '<li>A badge is present/assigned for that quiz.</li></ul></p>' .
         '<p>If these conditions are not met, only the standard quiz results appear.</p>' .
         '<p><strong>Available tokens:</strong><br>' .
         '[quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [badge:url], [site:base_url], [badge:checklist_url], [badge:checkout_minutes]<br>' .
-        '<strong>Conditional tokens:</strong><br>' .
+        '<strong>Conditional tokens (for success messages):</strong><br>' .
         '[if:badge_requires_checkout]...[/if:badge_requires_checkout]<br>' .
         '[if:badge_is_earned]...[/if:badge_is_earned]<br>' .
         '[if:badge_has_checklist]...[/if:badge_has_checklist]<br>' .
@@ -36,9 +37,15 @@ final class SettingsForm extends ConfigFormBase {
 
     $types = ['badge_quiz' => 'badge_quiz', 'quiz' => 'quiz'];
 
-    $form['enabled_types'] = [
+    $form['success_message_settings'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Success Message Settings'),
+      '#open' => TRUE,
+    ];
+
+    $form['success_message_settings']['enabled_types'] = [
       '#type' => 'checkboxes',
-      '#title' => $this->t('Show custom message for these quiz types'),
+      '#title' => $this->t('Show custom success message for these quiz types'),
       '#options' => $types,
       '#default_value' => $enabled,
     ];
@@ -59,7 +66,7 @@ final class SettingsForm extends ConfigFormBase {
 
     foreach ($types as $type_key => $label) {
       $template = $templates[$type_key] ?? [];
-      $form['html_templates_'.$type_key] = [
+      $form['success_message_settings']['html_templates_'.$type_key] = [
         '#type' => 'text_format',
         '#title' => $this->t('HTML for @type', ['@type' => $type_key]),
         '#format' => $template['format'] ?? 'full_html',
@@ -72,13 +79,33 @@ final class SettingsForm extends ConfigFormBase {
       ];
     }
 
-    $form['show_badge_details'] = [
+    $form['success_message_settings']['show_badge_details'] = [
         '#type' => 'checkboxes',
         '#title' => $this->t('For which quiz types should we show the facilitator schedule?'),
         '#description' => $this->t('This is only applicable for badges that require checkout.'),
         '#options' => $types,
         '#default_value' => $show_details,
     ];
+
+    $form['failure_message_settings'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Failure Message Settings'),
+        '#open' => TRUE,
+    ];
+
+    $default_failure_template = '<h3>You must have 100% correct to pass.</h3>' .
+        '<p>You did not pass the [quiz:title] quiz.</p>' .
+        '<p>Please review the materials for the <strong>[badge:title]</strong> badge and try again.</p>' .
+        '<a href="[badge:url]" class="btn btn-primary">Review Materials</a>';
+
+    $form['failure_message_settings']['failure_template'] = [
+        '#type' => 'text_format',
+        '#title' => $this->t('Custom message for failed quizzes'),
+        '#description' => $this->t('This message will be shown if a user does not get a score of 100%. All tokens are available.'),
+        '#format' => $failure_template['format'] ?? 'full_html',
+        '#default_value' => $failure_template['value'] ?? $default_failure_template,
+    ];
+
 
     return parent::buildForm($form, $form_state);
   }
@@ -101,10 +128,20 @@ final class SettingsForm extends ConfigFormBase {
       }
     }
 
+    $failure_template_val = $form_state->getValue('failure_template');
+    $failure_template = [];
+    if (isset($failure_template_val['value']) && $failure_template_val['value'] !== '') {
+        $failure_template = [
+          'value' => $failure_template_val['value'],
+          'format' => $failure_template_val['format'],
+        ];
+    }
+
     $this->config('assign_badge_from_quiz.settings')
       ->set('enabled_types', $enabled)
       ->set('html_templates', $templates)
       ->set('show_badge_details', $show_details)
+      ->set('failure_template', $failure_template)
       ->save();
 
     parent::submitForm($form, $form_state);

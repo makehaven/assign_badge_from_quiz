@@ -22,3 +22,6 @@ assign_badge_from_quiz.settings:
       label: 'Show detailed badge information for these quiz types'
       sequence:
         type: string
+    failure_template:
+      type: text_format
+      label: 'HTML for failure message'

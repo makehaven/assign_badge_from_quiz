@@ -62,18 +62,62 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
       'badge_has_checklist' => $has_checklist,
     ];
 
-    return preg_replace_callback(
-      '/\[if:(\w+)\](.*?)\[\/if:\1\]/s',
-      function ($matches) use ($logic) {
-        $key = $matches[1];
-        $content = $matches[2];
-        return $logic[$key] ?? FALSE ? $content : '';
-      },
-      $html
-    );
+    $previous_html = '';
+    while ($html !== $previous_html) {
+        $previous_html = $html;
+        $html = preg_replace_callback(
+            '/\[if:(\w+)\](.*?)\[\/if:\1\]/s',
+            function ($matches) use ($logic) {
+                $key = $matches[1];
+                $content = $matches[2];
+                return $logic[$key] ?? FALSE ? $content : '';
+            },
+            $html
+        );
+    }
+
+    return $html;
+  }
+
+  public function buildFailure(array $ctx): ?array {
+    $conf = $this->cfg->get('assign_badge_from_quiz.settings');
+    $template = $conf->get('failure_template') ?: [];
+    if (empty($template['value'])) return NULL;
+
+    // Keep existing "related term present" logic via caller:
+    if (empty($ctx['has_related_term'])) return NULL;
+
+    // Require badge.
+    if (empty($ctx['badge'])) return NULL;
+
+    $tpl = (string) $template['value'];
+
+    $r = [
+      '[quiz:nid]' => htmlspecialchars((string) ($ctx['quiz_nid'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[quiz:title]' => htmlspecialchars((string) ($ctx['quiz_title'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[quiz:type]' => htmlspecialchars((string) ($ctx['quiz_type'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[user:uid]' => htmlspecialchars((string) ($ctx['user']['uid'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[user:display_name]' => htmlspecialchars((string) ($ctx['user']['display_name'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:nid]' => htmlspecialchars((string) ($ctx['badge']['nid'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:title]' => htmlspecialchars((string) ($ctx['badge']['title'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:url]' => htmlspecialchars((string) ($ctx['badge']['url'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[site:base_url]' => htmlspecialchars((string) ($ctx['base_url'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:checklist_url]' => htmlspecialchars((string) ($ctx['badge']['checklist_url'] ?? ''), ENT_QUOTES, 'UTF-8'),
+      '[badge:checkout_minutes]' => htmlspecialchars((string) ($ctx['badge']['checkout_minutes'] ?? ''), ENT_QUOTES, 'UTF-8'),
+    ];
+
+    $html = strtr($tpl, $r);
+    // Failure messages don't have conditionals, so we don't call processConditionalTokens.
+
+    return [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['post-quiz-failure-message']],
+      'content' => ['#markup' => Markup::create($html)],
+      '#weight' => -100, // ensure it shows above normal results
+    ];
   }
 
   public static function trustedCallbacks() {
-    return ['build'];
+    return ['build', 'buildFailure'];
   }
 }
