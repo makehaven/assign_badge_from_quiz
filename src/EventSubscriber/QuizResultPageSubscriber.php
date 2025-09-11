@@ -43,10 +43,6 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    if ((int) $quiz_result->get('score')->value !== 100) {
-      return;
-    }
-
     $controller_result = $event->getControllerResult();
     if ($controller_result instanceof Response || !is_array($controller_result)) {
       return;
@@ -54,6 +50,8 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
     $quiz = $quiz_result->getQuiz();
     $quiz_nid = $quiz->id();
+    $quiz_type = $quiz->bundle();
+    $score = (int) $quiz_result->get('score')->value;
 
     // Logic to find the related badge term.
     $term_ids = $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
@@ -71,32 +69,59 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
     $user_account = $this->entityTypeManager->getStorage('user')->load($this->currentUser->id());
 
+    $badge_data = null;
+    if ($badge_term) {
+        $checklist_url = '';
+        if ($badge_term->hasField('field_badge_checklist') && !$badge_term->get('field_badge_checklist')->isEmpty()) {
+            $checklist_url = $badge_term->get('field_badge_checklist')->first()->getUrl()->toString();
+        }
+
+        $badge_data = [
+            'nid' => $badge_term->id(),
+            'title' => $badge_term->label(),
+            'url' => Url::fromRoute('entity.taxonomy_term.canonical', ['taxonomy_term' => $badge_term->id()])->toString(),
+            'checklist_url' => $checklist_url,
+            'has_checklist' => !empty($checklist_url),
+            'checkout_minutes' => '',
+        ];
+
+        if ($badge_term->hasField('field_badge_checkout_minutes') && !$badge_term->get('field_badge_checkout_minutes')->isEmpty()) {
+            $badge_data['checkout_minutes'] = $badge_term->get('field_badge_checkout_minutes')->value;
+        }
+        $badge_data['checkout_requirement'] = $badge_term->hasField('field_badge_checkout_requirement') ? $badge_term->get('field_badge_checkout_requirement')->value : 'no';
+    }
+
     $context = [
       'quiz_nid' => $quiz_nid,
       'quiz_title' => $quiz->label(),
-      'quiz_type' => $quiz->bundle(),
+      'quiz_type' => $quiz_type,
       'has_related_term' => $has_related_term,
       'user' => [
         'uid' => $this->currentUser->id(),
         'display_name' => $user_account->getDisplayName(),
       ],
-      'badge' => $badge_term ? ['nid' => $badge_term->id(), 'title' => $badge_term->label()] : null,
+      'badge' => $badge_data,
       'base_url' => Url::fromRoute('<front>', [], ['absolute' => TRUE])->toString(),
     ];
 
-    // Add the custom message.
-    if ($custom_display = $this->postQuizRenderer->build($context)) {
-      $controller_result['assign_badge_post_quiz_message'] = $custom_display;
-    }
+    if ($score === 100) {
+        // Add the custom success message.
+        if ($custom_display = $this->postQuizRenderer->build($context)) {
+            $controller_result['assign_badge_post_quiz_message'] = $custom_display;
+        }
 
-    // Add the detailed badge display if enabled.
-    $config = $this->configFactory->get('assign_badge_from_quiz.settings');
-    if ($config->get('show_badge_details')) {
-      $badge_details_render_array = $this->displayBuilder->build($quiz_result);
-      // The builder returns a full display. We only want the details, not the
-      // generic "congrats" message which is now in the configurable template.
-      unset($badge_details_render_array['congrats_message']);
-      $controller_result['assign_badge_details'] = $badge_details_render_array;
+        // Add the detailed badge display if enabled.
+        $config = $this->configFactory->get('assign_badge_from_quiz.settings');
+        $show_details_for_types = $config->get('show_badge_details') ?: [];
+        if ($badge_term && in_array($quiz_type, $show_details_for_types, TRUE)) {
+            $controller_result['assign_badge_facilitator_schedule'] = $this->displayBuilder->buildFacilitatorSchedule($badge_term);
+        }
+    }
+    else {
+        // Add the custom failure message.
+        if ($custom_display = $this->postQuizRenderer->buildFailure($context)) {
+            $controller_result['assign_badge_post_quiz_failure_message'] = $custom_display;
+        }
     }
 
     $event->setControllerResult($controller_result);
