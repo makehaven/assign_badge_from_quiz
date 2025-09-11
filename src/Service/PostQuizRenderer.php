@@ -81,8 +81,12 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
 
   public function buildFailure(array $ctx): ?array {
     $conf = $this->cfg->get('assign_badge_from_quiz.settings');
+    $enabled = $conf->get('enabled_types') ?: [];
     $template = $conf->get('failure_template') ?: [];
     if (empty($template['value'])) return NULL;
+
+    $type = (string) ($ctx['quiz_type'] ?? '');
+    if (!$type || !in_array($type, $enabled, TRUE)) return NULL;
 
     // Keep existing "related term present" logic via caller:
     if (empty($ctx['has_related_term'])) return NULL;

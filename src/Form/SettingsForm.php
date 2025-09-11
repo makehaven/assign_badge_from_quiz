@@ -45,7 +45,8 @@ final class SettingsForm extends ConfigFormBase {
 
     $form['success_message_settings']['enabled_types'] = [
       '#type' => 'checkboxes',
-      '#title' => $this->t('Show custom success message for these quiz types'),
+      '#title' => $this->t('Enable custom post-quiz messages for these quiz types'),
+      '#description' => $this->t('This enables both the success and failure messages for the selected quiz types.'),
       '#options' => $types,
       '#default_value' => $enabled,
     ];
@@ -101,7 +102,7 @@ final class SettingsForm extends ConfigFormBase {
     $form['failure_message_settings']['failure_template'] = [
         '#type' => 'text_format',
         '#title' => $this->t('Custom message for failed quizzes'),
-        '#description' => $this->t('This message will be shown if a user does not get a score of 100%. All tokens are available.'),
+        '#description' => $this->t('This message will be shown if a user does not get a score of 100%. It only displays for the quiz types enabled above. All tokens are available.'),
         '#format' => $failure_template['format'] ?? 'full_html',
         '#default_value' => $failure_template['value'] ?? $default_failure_template,
     ];
