@@ -26,6 +26,9 @@ final class SettingsForm extends ConfigFormBase {
         '<p>If these conditions are not met, only the standard quiz results appear.</p>' .
         '<p><strong>Available tokens:</strong><br>' .
         '[quiz:nid], [quiz:title], [quiz:type], [user:uid], [user:display_name], [badge:nid], [badge:title], [site:base_url], [badge:checklist_url], [badge:checkout_minutes]<br>' .
+        '<strong>Conditional tokens:</strong><br>' .
+        '[if:badge_requires_checkout]...[/if:badge_requires_checkout]<br>' .
+        '[if:badge_is_earned]...[/if:badge_is_earned]<br>' .
         '(Missing tokens resolve to empty.)</p>'
       ),
     ];
@@ -39,17 +42,16 @@ final class SettingsForm extends ConfigFormBase {
       '#default_value' => $enabled,
     ];
 
-    $default_templates = [
-      'badge_quiz' =>
-        '<h2 style="color:#4CAF50;">Congratulations! You passed the quiz!</h2>' .
-        '<p>The next step is to complete a practical checkout with a facilitator to earn the <strong>[badge:title]</strong> badge.</p><hr>' .
-        '<a href="[badge:checklist_url]" class="btn btn-info" target="_blank" style="margin-right: 10px;">View Checkout Checklist</a>' .
-        '<p style="display: inline-block; margin-left: 15px;"><strong>Estimated time:</strong> [badge:checkout_minutes] minutes</p>' .
-        '<h3>Schedule Your Checkout</h3>',
-      'quiz' =>
-        '<h2 style="color:#4CAF50;">Congratulations! You passed the quiz!</h2>' .
-        '<p>You have earned the <strong>[badge:title]</strong> badge and can now use the associated tools.</p><hr>',
-    ];
+    $default_template =
+      '<h2 style="color:#4CAF50;">Congratulations! You passed the quiz!</h2>' .
+      '[if:badge_requires_checkout]' .
+      '<p>The next step is to complete a practical checkout with a facilitator to earn the <strong>[badge:title]</strong> badge.</p><hr>' .
+      '<a href="[badge:checklist_url]" class="btn btn-info" target="_blank" style="margin-right: 10px;">View Checkout Checklist</a>' .
+      '<p style="display: inline-block; margin-left: 15px;"><strong>Estimated time:</strong> [badge:checkout_minutes] minutes</p>' .
+      '[/if:badge_requires_checkout]' .
+      '[if:badge_is_earned]' .
+      '<p>You have earned the <strong>[badge:title]</strong> badge and can now use the associated tools.</p><hr>' .
+      '[/if:badge_is_earned]';
 
     foreach ($types as $type_key => $label) {
       $template = $templates[$type_key] ?? [];
@@ -57,7 +59,7 @@ final class SettingsForm extends ConfigFormBase {
         '#type' => 'text_format',
         '#title' => $this->t('HTML for @type', ['@type' => $type_key]),
         '#format' => $template['format'] ?? 'full_html',
-        '#default_value' => $template['value'] ?? $default_templates[$type_key],
+        '#default_value' => $template['value'] ?? $default_template,
         '#states' => [
           'visible' => [
             ':input[name="enabled_types['.$type_key.']"]' => ['checked' => TRUE],
@@ -69,6 +71,7 @@ final class SettingsForm extends ConfigFormBase {
     $form['show_badge_details'] = [
         '#type' => 'checkboxes',
         '#title' => $this->t('For which quiz types should we show the facilitator schedule?'),
+        '#description' => $this->t('This is only applicable for badges that require checkout.'),
         '#options' => $types,
         '#default_value' => $show_details,
     ];

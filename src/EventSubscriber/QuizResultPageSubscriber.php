@@ -86,6 +86,7 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
         if ($badge_term->hasField('field_badge_checkout_minutes') && !$badge_term->get('field_badge_checkout_minutes')->isEmpty()) {
             $badge_data['checkout_minutes'] = $badge_term->get('field_badge_checkout_minutes')->value;
         }
+        $badge_data['checkout_requirement'] = $badge_term->hasField('field_badge_checkout_requirement') ? $badge_term->get('field_badge_checkout_requirement')->value : 'no';
     }
 
     $context = [

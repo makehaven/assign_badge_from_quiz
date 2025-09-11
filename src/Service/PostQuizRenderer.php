@@ -41,12 +41,33 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
     ];
 
     $html = strtr($tpl, $r);
+    $html = $this->processConditionalTokens($html, $ctx);
+
     return [
       '#type' => 'container',
       '#attributes' => ['class' => ['post-quiz-message']],
       'content' => ['#markup' => Markup::create($html)],
       '#weight' => -100, // ensure it shows above normal results
     ];
+  }
+
+  private function processConditionalTokens(string $html, array $ctx): string {
+    $checkout_req = $ctx['badge']['checkout_requirement'] ?? 'no';
+
+    $logic = [
+      'badge_requires_checkout' => in_array($checkout_req, ['yes', 'class']),
+      'badge_is_earned' => $checkout_req === 'no',
+    ];
+
+    return preg_replace_callback(
+      '/\[if:(\w+)\](.*?)\[\/if:\1\]/s',
+      function ($matches) use ($logic) {
+        $key = $matches[1];
+        $content = $matches[2];
+        return $logic[$key] ?? FALSE ? $content : '';
+      },
+      $html
+    );
   }
 
   public static function trustedCallbacks() {
