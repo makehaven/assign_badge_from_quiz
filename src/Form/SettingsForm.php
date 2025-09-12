@@ -4,8 +4,25 @@ namespace Drupal\assign_badge_from_quiz\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 
 final class SettingsForm extends ConfigFormBase {
+
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  public function __construct(ConfigFactoryInterface $config_factory, EntityTypeManagerInterface $entity_type_manager) {
+    parent::__construct($config_factory);
+    $this->entityTypeManager = $entity_type_manager;
+  }
+
+  public static function create(ContainerInterface $container): self {
+    return new self(
+      $container->get('config.factory'),
+      $container->get('entity_type.manager')
+    );
+  }
   public function getFormId(): string { return 'assign_badge_from_quiz_settings_form'; }
   protected function getEditableConfigNames(): array { return ['assign_badge_from_quiz.settings']; }
 
@@ -16,6 +33,19 @@ final class SettingsForm extends ConfigFormBase {
     $show_details = $cfg->get('show_badge_details') ?: [];
     $failure_template = $cfg->get('failure_template') ?: [];
     $facilitator_schedule_view = $cfg->get('facilitator_schedule_view');
+
+    $view_options = [];
+    $views = $this->entityTypeManager->getStorage('view')->loadMultiple();
+    foreach ($views as $view) {
+      $displays = $view->get('display');
+      foreach ($displays as $display) {
+        if ($display['display_plugin'] !== 'page' && $display['display_plugin'] !== 'block') {
+          continue;
+        }
+        $view_options[$view->id() . ':' . $display['id']] = $this->t('@view (@display)', ['@view' => $view->label(), '@display' => $display['display_title']]);
+      }
+    }
+    asort($view_options);
 
     $form['help'] = [
       '#type' => 'item',
@@ -90,10 +120,12 @@ final class SettingsForm extends ConfigFormBase {
     ];
 
     $form['success_message_settings']['facilitator_schedule_view'] = [
-      '#type' => 'textfield',
+      '#type' => 'select',
       '#title' => $this->t('Facilitator Schedule View'),
-      '#description' => $this->t('The machine name of the view and display to use for the facilitator schedule, in the format view_name:display_name. The view must accept a taxonomy term ID as an argument.'),
+      '#description' => $this->t('Select the view and display to use for the facilitator schedule. The view must accept a taxonomy term ID as an argument.'),
+      '#options' => $view_options,
       '#default_value' => $facilitator_schedule_view,
+      '#empty_option' => $this->t('- Select a view -'),
     ];
 
     $form['failure_message_settings'] = [
