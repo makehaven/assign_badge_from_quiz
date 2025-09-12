@@ -7,6 +7,7 @@ use Drupal\Core\Url;
 use Drupal\quiz\Entity\QuizResult;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\views\Views;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -22,23 +23,35 @@ class QuizResultDisplayBuilder {
    */
   protected $logger;
 
+  /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
+
 /**
    * Constructs a new QuizResultDisplayBuilder object.
    *
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
-   * The logger factory.
+   *   The logger factory.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
    */
-  public function __construct(\Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory) {
-    $this->logger = $logger_factory->get('assign_badge_from_quiz');
+  public function __construct(LoggerInterface $logger, ConfigFactoryInterface $config_factory) {
+    $this->logger = $logger;
+    $this->configFactory = $config_factory;
   }
 
 
 
 
   public function buildFacilitatorSchedule(Term $badge_term): array {
-    $view = Views::getView('facilitator_schedules');
+    $config = $this->configFactory->get('assign_badge_from_quiz.settings');
+    $view_name = $config->get('facilitator_schedule_view') ?: 'facilitator_schedules';
+    $view = Views::getView($view_name);
     if (!$view) {
-      $this->logger->warning('The "facilitator_schedules" view could not be loaded.');
+      $this->logger->warning('The facilitator schedule view could not be loaded.');
       return [];
     }
     $view->setDisplay('facilitator_schedule_tool_eva');

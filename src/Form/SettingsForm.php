@@ -15,6 +15,7 @@ final class SettingsForm extends ConfigFormBase {
     $templates = $cfg->get('html_templates') ?: [];
     $show_details = $cfg->get('show_badge_details') ?: [];
     $failure_template = $cfg->get('failure_template') ?: [];
+    $facilitator_schedule_view = $cfg->get('facilitator_schedule_view');
 
     $form['help'] = [
       '#type' => 'item',
@@ -88,6 +89,13 @@ final class SettingsForm extends ConfigFormBase {
         '#default_value' => $show_details,
     ];
 
+    $form['success_message_settings']['facilitator_schedule_view'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Facilitator Schedule View'),
+      '#description' => $this->t('The machine name of the view to use for the facilitator schedule. The view must accept a taxonomy term ID as an argument.'),
+      '#default_value' => $facilitator_schedule_view,
+    ];
+
     $form['failure_message_settings'] = [
         '#type' => 'details',
         '#title' => $this->t('Failure Message Settings'),
@@ -143,6 +151,7 @@ final class SettingsForm extends ConfigFormBase {
       ->set('html_templates', $templates)
       ->set('show_badge_details', $show_details)
       ->set('failure_template', $failure_template)
+      ->set('facilitator_schedule_view', $form_state->getValue('facilitator_schedule_view'))
       ->save();
 
     parent::submitForm($form, $form_state);

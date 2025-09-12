@@ -5,7 +5,7 @@ services:
 
   assign_badge_from_quiz.display_builder:
     class: Drupal\assign_badge_from_quiz\QuizResultDisplayBuilder
-    arguments: ['@logger.factory']
+    arguments: ['@logger.channel.assign_badge_from_quiz', '@config.factory']
 
   assign_badge_from_quiz.post_quiz_renderer:
     class: Drupal\assign_badge_from_quiz\Service\PostQuizRenderer
