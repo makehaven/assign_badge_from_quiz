@@ -7,7 +7,8 @@ use Drupal\Core\Url;
 use Drupal\quiz\Entity\QuizResult;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\views\Views;
-use Psr\Log\LoggerInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 
 /**
  * Service for building the custom display for quiz results.
@@ -22,26 +23,50 @@ class QuizResultDisplayBuilder {
    */
   protected $logger;
 
+  /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
+
 /**
    * Constructs a new QuizResultDisplayBuilder object.
    *
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
-   * The logger factory.
+   *   The logger factory.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
    */
-  public function __construct(\Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory) {
+  public function __construct(LoggerChannelFactoryInterface $logger_factory, ConfigFactoryInterface $config_factory) {
     $this->logger = $logger_factory->get('assign_badge_from_quiz');
+    $this->configFactory = $config_factory;
   }
 
 
 
 
   public function buildFacilitatorSchedule(Term $badge_term): array {
-    $view = Views::getView('facilitator_schedules');
-    if (!$view) {
-      $this->logger->warning('The "facilitator_schedules" view could not be loaded.');
+    $config = $this->configFactory->get('assign_badge_from_quiz.settings');
+    $view_and_display = $config->get('facilitator_schedule_view') ?: 'facilitator_schedules:facilitator_schedule_tool_eva';
+    $parts = explode(':', $view_and_display);
+    if (count($parts) !== 2) {
+      $this->logger->warning('The facilitator schedule view setting is invalid. It should be in the format view_name:display_name.');
       return [];
     }
-    $view->setDisplay('facilitator_schedule_tool_eva');
+    $view_name = $parts[0];
+    $display_name = $parts[1];
+
+    $view = Views::getView($view_name);
+    if (!$view) {
+      $this->logger->warning('The facilitator schedule view "@view" could not be loaded.', ['@view' => $view_name]);
+      return [];
+    }
+
+    if (!$view->setDisplay($display_name)) {
+        $this->logger->warning('The display "@display" could not be found on view "@view".', ['@display' => $display_name, '@view' => $view_name]);
+        return [];
+    }
     $view->setArguments([$badge_term->id()]);
     $view->execute();
     if (count($view->result) > 0) {

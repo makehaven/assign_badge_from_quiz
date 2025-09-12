@@ -4,8 +4,9 @@ services:
     autowire: true
 
   assign_badge_from_quiz.display_builder:
+    # Service for building the custom display for quiz results.
     class: Drupal\assign_badge_from_quiz\QuizResultDisplayBuilder
-    arguments: ['@logger.factory']
+    arguments: ['@logger.factory', '@config.factory']
 
   assign_badge_from_quiz.post_quiz_renderer:
     class: Drupal\assign_badge_from_quiz\Service\PostQuizRenderer
