@@ -8,7 +8,7 @@ use Drupal\quiz\Entity\QuizResult;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\views\Views;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Psr\Log\LoggerInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 
 /**
  * Service for building the custom display for quiz results.
@@ -38,8 +38,8 @@ class QuizResultDisplayBuilder {
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory.
    */
-  public function __construct(LoggerInterface $logger, ConfigFactoryInterface $config_factory) {
-    $this->logger = $logger;
+  public function __construct(LoggerChannelFactoryInterface $logger_factory, ConfigFactoryInterface $config_factory) {
+    $this->logger = $logger_factory->get('assign_badge_from_quiz');
     $this->configFactory = $config_factory;
   }
 
