@@ -48,13 +48,25 @@ class QuizResultDisplayBuilder {
 
   public function buildFacilitatorSchedule(Term $badge_term): array {
     $config = $this->configFactory->get('assign_badge_from_quiz.settings');
-    $view_name = $config->get('facilitator_schedule_view') ?: 'facilitator_schedules';
-    $view = Views::getView($view_name);
-    if (!$view) {
-      $this->logger->warning('The facilitator schedule view could not be loaded.');
+    $view_and_display = $config->get('facilitator_schedule_view') ?: 'facilitator_schedules:facilitator_schedule_tool_eva';
+    $parts = explode(':', $view_and_display);
+    if (count($parts) !== 2) {
+      $this->logger->warning('The facilitator schedule view setting is invalid. It should be in the format view_name:display_name.');
       return [];
     }
-    $view->setDisplay('facilitator_schedule_tool_eva');
+    $view_name = $parts[0];
+    $display_name = $parts[1];
+
+    $view = Views::getView($view_name);
+    if (!$view) {
+      $this->logger->warning('The facilitator schedule view "@view" could not be loaded.', ['@view' => $view_name]);
+      return [];
+    }
+
+    if (!$view->setDisplay($display_name)) {
+        $this->logger->warning('The display "@display" could not be found on view "@view".', ['@display' => $display_name, '@view' => $view_name]);
+        return [];
+    }
     $view->setArguments([$badge_term->id()]);
     $view->execute();
     if (count($view->result) > 0) {

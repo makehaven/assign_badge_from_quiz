@@ -27,4 +27,4 @@ assign_badge_from_quiz.settings:
       label: 'HTML for failure message'
     facilitator_schedule_view:
       type: string
-      label: 'Facilitator schedule view'
+      label: 'Facilitator schedule view and display'

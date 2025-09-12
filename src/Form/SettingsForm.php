@@ -92,7 +92,7 @@ final class SettingsForm extends ConfigFormBase {
     $form['success_message_settings']['facilitator_schedule_view'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Facilitator Schedule View'),
-      '#description' => $this->t('The machine name of the view to use for the facilitator schedule. The view must accept a taxonomy term ID as an argument.'),
+      '#description' => $this->t('The machine name of the view and display to use for the facilitator schedule, in the format view_name:display_name. The view must accept a taxonomy term ID as an argument.'),
       '#default_value' => $facilitator_schedule_view,
     ];
 
