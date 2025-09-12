@@ -42,7 +42,12 @@ final class SettingsForm extends ConfigFormBase {
         if ($display['display_plugin'] !== 'page' && $display['display_plugin'] !== 'block') {
           continue;
         }
-        $view_options[$view->id() . ':' . $display['id']] = $this->t('@view (@display)', ['@view' => $view->label(), '@display' => $display['display_title']]);
+        $view_options[$view->id() . ':' . $display['id']] = $this->t('@view (@display) [@id:@display_id]', [
+          '@view' => $view->label(),
+          '@display' => $display['display_title'],
+          '@id' => $view->id(),
+          '@display_id' => $display['id'],
+        ]);
       }
     }
     asort($view_options);
