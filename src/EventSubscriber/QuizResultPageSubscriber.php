@@ -114,7 +114,9 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
         $config = $this->configFactory->get('assign_badge_from_quiz.settings');
         $show_details_for_types = $config->get('show_badge_details') ?: [];
         if ($badge_term && in_array($quiz_type, $show_details_for_types, TRUE)) {
-            $controller_result['assign_badge_facilitator_schedule'] = $this->displayBuilder->buildFacilitatorSchedule($badge_term);
+            if (isset($context['badge']['checkout_requirement']) && $context['badge']['checkout_requirement'] !== 'no') {
+                $controller_result['assign_badge_facilitator_schedule'] = $this->displayBuilder->buildFacilitatorSchedule($badge_term);
+            }
         }
     }
     else {
