@@ -1,13 +1,18 @@
 <?php
 
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Hook\Attribute\LegacyHook;
 use Drupal\assign_badge_from_quiz\Hook\QuizResultHook;
 
 /**
- * Implements hook_ENTITY_TYPE_update().
+ * Implements hook_quiz_result_insert().
  */
-#[LegacyHook]
-function assign_badge_from_quiz_entity_update(EntityInterface $entity) {
+function assign_badge_from_quiz_quiz_result_insert(EntityInterface $entity) {
+  \Drupal::service(QuizResultHook::class)->entityUpdate($entity);
+}
+
+/**
+ * Implements hook_quiz_result_update().
+ */
+function assign_badge_from_quiz_quiz_result_update(EntityInterface $entity) {
   \Drupal::service(QuizResultHook::class)->entityUpdate($entity);
 }
