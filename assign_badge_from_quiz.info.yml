@@ -1,8 +1,9 @@
 name: 'Assign Badge From Quiz'
 type: module
 description: 'Provides a custom Rules action to assign a badge based on quiz results.'
-package: Custom
+package: Makerspace
 core_version_requirement: ^10 || ^11
 dependencies:
   - rules:rules
 version: '1.0'
+configure: assign_badge_from_quiz.settings
