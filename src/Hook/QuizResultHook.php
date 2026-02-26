@@ -3,10 +3,7 @@
 namespace Drupal\assign_badge_from_quiz\Hook;
 
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Hook\Attribute\Hook;
 use Drupal\node\Entity\Node;
-use Drupal\quiz\Entity\QuizResult;
-use Drupal\taxonomy\Entity\Term;
 
 /**
  * Class for handling quiz result updates.
@@ -34,6 +31,45 @@ class QuizResultHook {
         if (!empty($terms)) {
           $badge_term = reset($terms);
           $badge_name = $badge_term->getName();
+
+          // Gate progression when documentation/prerequisites are configured.
+          if (\Drupal::hasService('appointment_facilitator.badge_gate')) {
+            /** @var \Drupal\appointment_facilitator\Service\BadgePrerequisiteGate $gate */
+            $gate = \Drupal::service('appointment_facilitator.badge_gate');
+            $gate_result = $gate->evaluate((int) $user_id, $badge_term);
+            if (!$gate_result['allowed']) {
+              \Drupal::logger('assign_badge_from_quiz')->notice(
+                'Blocked badge request for uid @uid badge @badge (tid @tid). Reasons: @reasons',
+                [
+                  '@uid' => $user_id,
+                  '@badge' => $badge_name,
+                  '@tid' => $badge_term->id(),
+                  '@reasons' => implode(' ', $gate_result['reasons']),
+                ]
+              );
+              $messages = [];
+              $messages[] = t('You passed the quiz, but you cannot receive the @badge badge yet.', [
+                '@badge' => $badge_name,
+              ]);
+              if (!empty($gate_result['requires_documentation']) && empty($gate_result['documentation_approved'])) {
+                if (!empty($gate_result['documentation_form_url'])) {
+                  $messages[] = t('Next step: submit and get approval for your documentation form: @url', [
+                    '@url' => $gate_result['documentation_form_url'],
+                  ]);
+                }
+                else {
+                  $messages[] = t('Next step: submit and get approval for the required training documentation.');
+                }
+              }
+              if (!empty($gate_result['prerequisites_missing_labels'])) {
+                $messages[] = t('Prerequisite badges still required (must be active): @badges', [
+                  '@badges' => implode(', ', $gate_result['prerequisites_missing_labels']),
+                ]);
+              }
+              \Drupal::messenger()->addWarning(implode(' ', $messages));
+              return;
+            }
+          }
 
           // Determine checkout requirements.
           $checkout_requirement = $badge_term->hasField('field_badge_checkout_requirement') ? $badge_term->get('field_badge_checkout_requirement')->value : 'no';

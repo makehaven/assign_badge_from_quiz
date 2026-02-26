@@ -17,6 +17,7 @@ It enhances the user experience by providing immediate and clear feedback on the
 
 * **Automatic Badge Assignment**: Creates a "badge_request" node upon 100% quiz completion.
 * **Dynamic Status**: Sets the badge request status to "active" if no checkout is needed, or "pending" if a practical checkout is required.
+* **Prerequisite Gate Enforcement**: If a badge has prerequisite badges and/or a training documentation webform configured, badge requests are blocked until all configured gates pass.
 * **Smart Post-Quiz Display**: Automatically injects a "next steps" area into the main content of the quiz results page, compatible with any theme (including admin themes like Gin).
 * **Conditional Information**:
     * If a checkout is required, it displays the estimated time, a link to the checkout checklist, and a filtered list of available facilitators for that specific badge.
