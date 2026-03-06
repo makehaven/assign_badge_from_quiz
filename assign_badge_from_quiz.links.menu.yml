@@ -4,3 +4,10 @@ assign_badge_from_quiz.settings:
   route_name: assign_badge_from_quiz.settings
   parent: system.admin_config_content
   weight: 50
+
+assign_badge_from_quiz.quality_report:
+  title: 'Quiz Quality Report'
+  description: 'Monitor and improve quiz quality (question count and feedback).'
+  parent: system.admin_reports
+  route_name: assign_badge_from_quiz.quality_report
+  weight: 10

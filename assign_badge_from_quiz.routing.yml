@@ -5,3 +5,11 @@ assign_badge_from_quiz.settings:
     _title: 'Quiz Badge Assign Configuration'
   requirements:
     _permission: 'administer site configuration'
+
+assign_badge_from_quiz.quality_report:
+  path: '/admin/reports/quiz-quality'
+  defaults:
+    _controller: '\Drupal\assign_badge_from_quiz\Controller\QuizQualityReportController::report'
+    _title: 'Quiz Quality Report'
+  requirements:
+    _permission: 'administer quiz'
