@@ -1,0 +1,4 @@
+quality_reports:
+  css:
+    theme:
+      css/quality-reports.css: {}

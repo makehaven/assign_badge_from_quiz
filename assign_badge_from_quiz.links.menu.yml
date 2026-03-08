@@ -7,7 +7,14 @@ assign_badge_from_quiz.settings:
 
 assign_badge_from_quiz.quality_report:
   title: 'Quiz Quality Report'
-  description: 'Monitor and improve quiz quality (question count and feedback).'
+  description: 'Monitor badge quiz quality (question count, feedback, and settings standardization).'
   parent: system.admin_reports
   route_name: assign_badge_from_quiz.quality_report
   weight: 10
+
+assign_badge_from_quiz.badge_quality_report:
+  title: 'Badge Quality Report'
+  description: 'Review badge references and related badge data quality.'
+  parent: system.admin_reports
+  route_name: assign_badge_from_quiz.badge_quality_report
+  weight: 11

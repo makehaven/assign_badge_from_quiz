@@ -2,6 +2,7 @@
 
 namespace Drupal\assign_badge_from_quiz;
 
+use Drupal\appointment_facilitator\Controller\BadgeNextStepsController;
 use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
 use Drupal\quiz\Entity\QuizResult;
@@ -70,7 +71,41 @@ class QuizResultDisplayBuilder {
     $view->setArguments([$badge_term->id()]);
     $view->execute();
     if (count($view->result) > 0) {
-      return $view->buildRenderable();
+      $legacy = $view->buildRenderable();
+      $build = [
+        '#type' => 'container',
+        '#attributes' => ['class' => ['assign-badge-facilitator-schedule']],
+      ];
+
+      // Prepend the new schedule table above the legacy facilitator view.
+      $table = [];
+      try {
+        /** @var \Drupal\appointment_facilitator\Controller\BadgeNextStepsController $controller */
+        $controller = \Drupal::classResolver()->getInstanceFromDefinition(BadgeNextStepsController::class);
+        if ($controller instanceof BadgeNextStepsController) {
+          $table = $controller->buildScheduleTableForBadgeTerm($badge_term);
+        }
+      }
+      catch (\Throwable $e) {
+        // Keep legacy output even if schedule table building fails.
+        $this->logger->warning('Unable to render schedule table on quiz result page: @message', ['@message' => $e->getMessage()]);
+      }
+
+      if (!empty($table)) {
+        $build['schedule_table'] = [
+          '#type' => 'container',
+          '#attributes' => ['class' => ['assign-badge-schedule-table-wrapper']],
+          'heading' => [
+            '#type' => 'html_tag',
+            '#tag' => 'h3',
+            '#value' => 'Available times',
+          ],
+          'table' => $table,
+        ];
+      }
+
+      $build['legacy_facilitator_view'] = $legacy;
+      return $build;
     }
     else {
       $message = '<div class="alert alert-warning"><h4>No Facilitators Currently Available</h4><p>There are no facilitators scheduled for this checkout in the near future. Please check back later or ask for assistance in the relevant Slack channel.</p></div>';

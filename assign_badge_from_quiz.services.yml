@@ -1,4 +1,8 @@
 services:
+  assign_badge_from_quiz.quiz_settings_standardizer:
+    class: Drupal\assign_badge_from_quiz\Service\QuizSettingsStandardizer
+    arguments: ['@database']
+
   Drupal\assign_badge_from_quiz\Hook\QuizResultHook:
     class: Drupal\assign_badge_from_quiz\Hook\QuizResultHook
     autowire: true

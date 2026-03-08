@@ -13,3 +13,23 @@ assign_badge_from_quiz.quality_report:
     _title: 'Quiz Quality Report'
   requirements:
     _permission: 'administer quiz'
+
+assign_badge_from_quiz.badge_quality_report:
+  path: '/admin/reports/badge-quality'
+  defaults:
+    _controller: '\Drupal\assign_badge_from_quiz\Controller\QuizQualityReportController::badgeQualityReport'
+    _title: 'Badge Quality Report'
+  requirements:
+    _permission: 'access administration reports'
+
+assign_badge_from_quiz.standardize_quiz_settings:
+  path: '/admin/reports/quiz-quality/{quiz}/standardize'
+  defaults:
+    _form: '\Drupal\assign_badge_from_quiz\Form\StandardizeQuizSettingsConfirmForm'
+    _title: 'Apply Standard Quiz Settings'
+  requirements:
+    _permission: 'administer quiz'
+  options:
+    parameters:
+      quiz:
+        type: entity:quiz

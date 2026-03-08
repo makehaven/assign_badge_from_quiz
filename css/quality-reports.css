@@ -1,0 +1,69 @@
+.abfq-nav-row,
+.abfq-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.abfq-pill {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid #cfd8dc;
+  background: #f8fafc;
+  line-height: 1.2;
+}
+
+.abfq-pill a {
+  text-decoration: none;
+}
+
+.abfq-pill--selected {
+  border-color: #1565c0;
+  background: #e3f2fd;
+}
+
+.abfq-pill--published,
+.abfq-pill--active {
+  border-color: #2e7d32;
+  background: #e8f5e9;
+}
+
+.abfq-pill--unpublished,
+.abfq-pill--inactive,
+.abfq-pill--unlisted {
+  border-color: #ef6c00;
+  background: #fff3e0;
+}
+
+.abfq-pill--listed {
+  border-color: #0277bd;
+  background: #e1f5fe;
+}
+
+.abfq-indicator {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.abfq-indicator--ok {
+  color: #1b5e20;
+  background: #e8f5e9;
+  border: 1px solid #2e7d32;
+}
+
+.abfq-indicator--bad {
+  color: #b71c1c;
+  background: #ffebee;
+  border: 1px solid #c62828;
+}
+
+.abfq-indicator-notes {
+  margin-top: 0.2rem;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
