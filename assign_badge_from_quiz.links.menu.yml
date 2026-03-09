@@ -18,3 +18,10 @@ assign_badge_from_quiz.badge_quality_report:
   parent: system.admin_reports
   route_name: assign_badge_from_quiz.badge_quality_report
   weight: 11
+
+assign_badge_from_quiz.tool_quality_report:
+  title: 'Tool Quality Report'
+  description: 'Monitor tool page quality and badge-to-tool chain completeness.'
+  parent: system.admin_reports
+  route_name: assign_badge_from_quiz.tool_quality_report
+  weight: 12
