@@ -30,6 +30,14 @@ assign_badge_from_quiz.tool_quality_report:
   requirements:
     _permission: 'access administration reports'
 
+assign_badge_from_quiz.facilitator_setup_report:
+  path: '/admin/reports/facilitator-setup-quality'
+  defaults:
+    _controller: '\Drupal\assign_badge_from_quiz\Controller\QuizQualityReportController::facilitatorSetupReport'
+    _title: 'Facilitator Setup Report'
+  requirements:
+    _permission: 'access administration reports'
+
 assign_badge_from_quiz.standardize_quiz_settings:
   path: '/admin/reports/quiz-quality/{quiz}/standardize'
   defaults:

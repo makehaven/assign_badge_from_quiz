@@ -25,3 +25,10 @@ assign_badge_from_quiz.tool_quality_report:
   parent: system.admin_reports
   route_name: assign_badge_from_quiz.tool_quality_report
   weight: 12
+
+assign_badge_from_quiz.facilitator_setup_report:
+  title: 'Facilitator Setup Report'
+  description: 'Review facilitator readiness for badge issuing, current schedule coverage, and profile setup.'
+  parent: system.admin_reports
+  route_name: assign_badge_from_quiz.facilitator_setup_report
+  weight: 13

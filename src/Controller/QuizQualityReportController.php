@@ -4,6 +4,7 @@ namespace Drupal\assign_badge_from_quiz\Controller;
 
 use Drupal\assign_badge_from_quiz\Service\QuizSettingsStandardizer;
 use Drupal\Component\Utility\Html;
+use Drupal\Component\Utility\Unicode;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Link;
@@ -51,6 +52,8 @@ class QuizQualityReportController extends ControllerBase {
    * Generates the report.
    */
   public function report() {
+    $focus_quiz_id = $this->getPositiveQueryInt('quiz');
+
     $header = [
       'title' => $this->t('Quiz Title'),
       'associated_badge' => $this->t('Associated Badge'),
@@ -74,6 +77,15 @@ class QuizQualityReportController extends ControllerBase {
 
     foreach ($results as $result) {
       $qid = (int) $result->qid;
+      if ($focus_quiz_id > 0 && $qid !== $focus_quiz_id) {
+        continue;
+      }
+      $has_any_badges = !empty($badge_map[$qid]['names']);
+      $has_actionable_badges = isset($badge_quality_by_quiz[$qid]);
+      if ($focus_quiz_id === 0 && $has_any_badges && !$has_actionable_badges) {
+        continue;
+      }
+
       $badge_summary = $this->buildBadgeSummaryForQuiz((int) $result->qid, $badge_map);
       $quiz_quality = $quiz_quality_map[$qid] ?? ['ok' => FALSE, 'issues' => [(string) $this->t('Unknown quiz quality state')]];
       $badge_quality = $badge_quality_by_quiz[$qid] ?? ['ok' => FALSE, 'issues' => [(string) $this->t('No linked badge terms')]];
@@ -94,7 +106,7 @@ class QuizQualityReportController extends ControllerBase {
         ],
         'badge_quality' => [
           'title' => $this->t('Badge Quality Report'),
-          'url' => Url::fromRoute('assign_badge_from_quiz.badge_quality_report'),
+          'url' => Url::fromRoute('assign_badge_from_quiz.badge_quality_report', [], ['query' => ['quiz' => $result->qid, 'status' => 'needs_attention']]),
         ],
       ];
       if (!empty($settings_issues)) {
@@ -108,7 +120,13 @@ class QuizQualityReportController extends ControllerBase {
         'title' => Link::fromTextAndUrl($result->title, Url::fromRoute('entity.quiz.canonical', ['quiz' => $result->qid])),
         'associated_badge' => $badge_summary['associated_badge'],
         'badge_quality' => [
-          'data' => $this->buildIndicatorMarkup($badge_quality['ok'], (string) $this->t($badge_quality['ok'] ? 'Greenlight' : 'Redlight'), implode('; ', $badge_quality['issues'])),
+          'data' => $this->buildIndicatorWithLink(
+            $badge_quality['ok'],
+            (string) $this->t($badge_quality['ok'] ? 'Greenlight' : 'Redlight'),
+            implode('; ', $badge_quality['issues']),
+            Url::fromRoute('assign_badge_from_quiz.badge_quality_report', [], ['query' => ['quiz' => $qid, 'status' => 'needs_attention']]),
+            (string) $this->t('Open related badge issues')
+          ),
         ],
         'badge_applied_after_quiz' => $badge_summary['badge_applied_after_quiz'],
         'checkout_requirement' => $badge_summary['checkout_requirement'],
@@ -132,6 +150,9 @@ class QuizQualityReportController extends ControllerBase {
 
     return [
       'nav' => $this->buildReportNavigation('quiz'),
+      'focus' => $this->buildFocusSummary([
+        $focus_quiz_id > 0 ? (string) $this->t('Focused on quiz ID @qid.', ['@qid' => $focus_quiz_id]) : '',
+      ], 'assign_badge_from_quiz.quality_report'),
       'table' => [
         '#type' => 'table',
         '#header' => $header,
@@ -148,11 +169,14 @@ class QuizQualityReportController extends ControllerBase {
    * Builds the badge quality report from badge taxonomy term definitions.
    */
   public function badgeQualityReport(): array {
-    $status_filter = (string) (\Drupal::request()->query->get('status') ?? 'all');
+    $status_filter = (string) (\Drupal::request()->query->get('status') ?? 'needs_attention');
     $allowed_status_filters = ['all', 'active', 'inactive', 'unpublished', 'unlisted', 'needs_attention'];
     if (!in_array($status_filter, $allowed_status_filters, TRUE)) {
-      $status_filter = 'all';
+      $status_filter = 'needs_attention';
     }
+    $focus_badge_id = $this->getPositiveQueryInt('badge');
+    $focus_quiz_id = $this->getPositiveQueryInt('quiz');
+    $focus_issuer_id = $this->getPositiveQueryInt('issuer');
 
     $header = [
       'badge' => $this->t('Badge Term'),
@@ -201,8 +225,19 @@ class QuizQualityReportController extends ControllerBase {
     /** @var \Drupal\taxonomy\TermInterface[] $terms */
     $terms = $storage->loadMultiple($tids);
     foreach ($terms as $term) {
+      if ($focus_badge_id > 0 && (int) $term->id() !== $focus_badge_id) {
+        continue;
+      }
+      if ($focus_quiz_id > 0 && !in_array($focus_quiz_id, $this->getLinkedQuizIds($term), TRUE)) {
+        continue;
+      }
+      if ($focus_issuer_id > 0 && !$this->isUserReferencedInBadgeIssuerFields($term, $focus_issuer_id)) {
+        continue;
+      }
+
       $quiz_links = $this->buildLinkedQuizLinks($term);
       $quiz_quality_for_badge = $this->evaluateBadgeLinkedQuizQuality($term, $quiz_quality_map);
+      $linked_quiz_ids = $this->getLinkedQuizIds($term);
 
       $has_video = $term->hasField('field_badge_video') && !$term->get('field_badge_video')->isEmpty();
       $has_transcript = $term->hasField('field_badge_video_transcript') && !$term->get('field_badge_video_transcript')->isEmpty();
@@ -264,7 +299,9 @@ class QuizQualityReportController extends ControllerBase {
         ],
         'quiz_quality' => [
           'title' => $this->t('Quiz Quality Report'),
-          'url' => Url::fromRoute('assign_badge_from_quiz.quality_report'),
+          'url' => Url::fromRoute('assign_badge_from_quiz.quality_report', [], ['query' => array_filter([
+            'quiz' => $linked_quiz_ids[0] ?? NULL,
+          ])]),
         ],
       ];
       if ($transcript_blocked && $video_id) {
@@ -287,14 +324,22 @@ class QuizQualityReportController extends ControllerBase {
           ],
         ],
         'quiz_quality' => [
-          'data' => $this->buildIndicatorMarkup($quiz_quality_for_badge['ok'], (string) $this->t($quiz_quality_for_badge['ok'] ? 'Greenlight' : 'Redlight'), implode('; ', $quiz_quality_for_badge['issues'])),
+          'data' => $this->buildIndicatorWithLink(
+            $quiz_quality_for_badge['ok'],
+            (string) $this->t($quiz_quality_for_badge['ok'] ? 'Greenlight' : 'Redlight'),
+            implode('; ', $quiz_quality_for_badge['issues']),
+            Url::fromRoute('assign_badge_from_quiz.quality_report', [], ['query' => array_filter([
+              'quiz' => $linked_quiz_ids[0] ?? NULL,
+            ])]),
+            (string) $this->t('Open related quiz issues')
+          ),
         ],
         'checkout_requirement' => $this->getCheckoutRequirementLabel($checkout_requirement),
         'checkout_minutes' => $checkout_minutes === NULL ? $this->t('Not set') : $checkout_minutes,
         'checklist' => $has_checklist ? $this->t('Yes') : $this->t('No'),
         'internal_checklist' => $has_internal_checklist ? $this->t('Yes') : $this->t('No'),
         'training_documentation' => $has_training_doc ? $this->t('Yes') : $this->t('No'),
-        'video' => $has_video ? $this->t('Yes') : $this->t('No'),
+        'video' => $has_video ? $this->t('Yes') : $this->t('Optional'),
         'transcript' => ['data' => $transcript_cell],
         'prerequisites' => $prereq_count,
         'issuers' => $issuer_count,
@@ -323,6 +368,11 @@ class QuizQualityReportController extends ControllerBase {
     return [
       'nav' => $this->buildReportNavigation('badge'),
       'filters' => $this->buildBadgeStatusFilters($status_filter),
+      'focus' => $this->buildFocusSummary([
+        $focus_badge_id > 0 ? (string) $this->t('Focused on badge ID @tid.', ['@tid' => $focus_badge_id]) : '',
+        $focus_quiz_id > 0 ? (string) $this->t('Filtered to badges linked to quiz ID @qid.', ['@qid' => $focus_quiz_id]) : '',
+        $focus_issuer_id > 0 ? (string) $this->t('Filtered to badges where user ID @uid is an issuer.', ['@uid' => $focus_issuer_id]) : '',
+      ], 'assign_badge_from_quiz.badge_quality_report', ['status' => $status_filter]),
       'table' => [
         '#type' => 'table',
         '#header' => $header,
@@ -410,6 +460,10 @@ class QuizQualityReportController extends ControllerBase {
     /** @var \Drupal\taxonomy\TermInterface[] $terms */
     $terms = $storage->loadMultiple($tids);
     foreach ($terms as $term) {
+      if (!$this->isActionableBadgeTerm($term)) {
+        continue;
+      }
+
       $quiz_quality_for_badge = $this->evaluateBadgeLinkedQuizQuality($term, $quiz_quality_map);
       $issues = $this->getBadgeTermQualityIssues($term, $quiz_quality_for_badge);
       foreach ($this->getLinkedQuizIds($term) as $qid) {
@@ -445,6 +499,10 @@ class QuizQualityReportController extends ControllerBase {
     /** @var \Drupal\taxonomy\TermInterface[] $terms */
     $terms = $storage->loadMultiple($tids);
     foreach ($terms as $term) {
+      if (!$this->isActionableBadgeTerm($term)) {
+        continue;
+      }
+
       $quiz_quality_for_badge = $this->evaluateBadgeLinkedQuizQuality($term, $quiz_quality_map);
       $issues = $this->getBadgeTermQualityIssues($term, $quiz_quality_for_badge);
       $map[(int) $term->id()] = [
@@ -597,12 +655,12 @@ class QuizQualityReportController extends ControllerBase {
   protected function buildBadgeStatusFilters(string $active_filter): array {
     $route = 'assign_badge_from_quiz.badge_quality_report';
     $options = [
-      'all' => $this->t('All'),
+      'needs_attention' => $this->t('Needs Attention'),
       'active' => $this->t('Active'),
+      'all' => $this->t('All'),
       'inactive' => $this->t('Inactive'),
       'unpublished' => $this->t('Unpublished'),
       'unlisted' => $this->t('Unlisted'),
-      'needs_attention' => $this->t('Needs Attention'),
     ];
 
     $items = [];
@@ -629,11 +687,11 @@ class QuizQualityReportController extends ControllerBase {
    */
   protected function matchesBadgeStatusFilter(string $filter, bool $is_published, bool $is_inactive, bool $is_unlisted, bool $has_quality_issues): bool {
     return match ($filter) {
-      'active' => $is_published && !$is_inactive,
+      'active' => $is_published && !$is_inactive && !$is_unlisted,
       'inactive' => $is_inactive,
       'unpublished' => !$is_published,
       'unlisted' => $is_unlisted,
-      'needs_attention' => $has_quality_issues,
+      'needs_attention' => $is_published && !$is_inactive && !$is_unlisted && $has_quality_issues,
       default => TRUE,
     };
   }
@@ -645,6 +703,7 @@ class QuizQualityReportController extends ControllerBase {
     $quiz_link = Link::fromTextAndUrl($this->t('Quiz Quality Report'), Url::fromRoute('assign_badge_from_quiz.quality_report'))->toString();
     $badge_link = Link::fromTextAndUrl($this->t('Badge Quality Report'), Url::fromRoute('assign_badge_from_quiz.badge_quality_report'))->toString();
     $tool_link = Link::fromTextAndUrl($this->t('Tool Quality Report'), Url::fromRoute('assign_badge_from_quiz.tool_quality_report'))->toString();
+    $facilitator_link = Link::fromTextAndUrl($this->t('Facilitator Setup Report'), Url::fromRoute('assign_badge_from_quiz.facilitator_setup_report'))->toString();
 
     return [
       '#type' => 'container',
@@ -657,6 +716,9 @@ class QuizQualityReportController extends ControllerBase {
       ],
       'tool' => [
         '#markup' => '<span class="' . ($current === 'tool' ? 'abfq-pill abfq-pill--selected' : 'abfq-pill') . '">' . $tool_link . '</span>',
+      ],
+      'facilitator' => [
+        '#markup' => '<span class="' . ($current === 'facilitator' ? 'abfq-pill abfq-pill--selected' : 'abfq-pill') . '">' . $facilitator_link . '</span>',
       ],
     ];
   }
@@ -675,10 +737,43 @@ class QuizQualityReportController extends ControllerBase {
   }
 
   /**
+   * Builds an indicator plus a direct follow-up link.
+   */
+  protected function buildIndicatorWithLink(bool $ok, string $label, string $details, Url $url, string $link_label): array {
+    $build = $this->buildIndicatorMarkup($ok, $label, $details);
+    $markup = (string) ($build['#markup'] ?? '');
+    $markup .= '<div class="abfq-indicator-notes"><a href="' . Html::escape($url->toString()) . '">' . Html::escape($link_label) . '</a></div>';
+    return ['#markup' => $markup];
+  }
+
+  /**
    * Builds small status pill markup.
    */
   protected function buildPillMarkup(string $modifier, string $label): string {
     return '<span class="abfq-pill abfq-pill--' . Html::escape($modifier) . '">' . Html::escape($label) . '</span>';
+  }
+
+  /**
+   * Builds a compact summary of any active focus query params.
+   */
+  protected function buildFocusSummary(array $messages, string $route_name, array $query = []): array {
+    $messages = array_values(array_filter($messages));
+    if ($messages === []) {
+      return [];
+    }
+
+    $clear_url = Url::fromRoute($route_name, [], ['query' => $query])->toString();
+    return [
+      '#markup' => '<div class="abfq-focus-summary">' . Html::escape(implode(' ', $messages)) . ' <a href="' . Html::escape($clear_url) . '">' . Html::escape((string) $this->t('Clear focus')) . '</a></div>',
+    ];
+  }
+
+  /**
+   * Reads a positive integer query parameter.
+   */
+  protected function getPositiveQueryInt(string $key): int {
+    $value = \Drupal::request()->query->get($key);
+    return is_numeric($value) && (int) $value > 0 ? (int) $value : 0;
   }
 
   /**
@@ -775,24 +870,29 @@ class QuizQualityReportController extends ControllerBase {
    * Builds the tool quality report from item nodes.
    */
   public function toolQualityReport(): array {
-    $status_filter = (string) (\Drupal::request()->query->get('status') ?? 'all');
-    $allowed_status_filters = ['all', 'published', 'unpublished', 'reservable', 'no_badge', 'no_docs', 'no_slack', 'stale', 'needs_attention'];
+    $status_filter = (string) (\Drupal::request()->query->get('status') ?? 'needs_attention');
+    $allowed_status_filters = ['all', 'published', 'unpublished', 'gone', 'reservable', 'no_badge', 'no_docs', 'no_slack', 'stale', 'needs_attention'];
     if (!in_array($status_filter, $allowed_status_filters, TRUE)) {
-      $status_filter = 'all';
+      $status_filter = 'needs_attention';
     }
+    $focus_tool_id = $this->getPositiveQueryInt('tool');
+    $focus_badge_id = $this->getPositiveQueryInt('badge');
 
     $header = [
       'tool' => $this->t('Tool'),
       'published' => $this->t('Published'),
       'status' => $this->t('Status'),
-      'primary_badge' => $this->t('Primary Badge'),
+      'area' => $this->t('Area of Interest'),
+      'category' => $this->t('Category'),
+      'hazard' => $this->t('Hazard Band'),
+      'description' => $this->t('Description'),
+      'primary_badge' => $this->t('Badge Requirement'),
       'badge_quality' => $this->t('Badge Quality'),
-      'instructions' => $this->t('Instructions'),
-      'manuals' => $this->t('Manuals'),
-      'video' => $this->t('Video'),
+      'documentation' => $this->t('Use Docs'),
+      'model' => $this->t('Model'),
+      'value' => $this->t('Value'),
       'image' => $this->t('Image'),
       'location' => $this->t('Location'),
-      'contact' => $this->t('Question Contact'),
       'reservable' => $this->t('Reservable Profile'),
       'slack' => $this->t('Slack Routing'),
       'last_updated' => $this->t('Last Updated'),
@@ -833,15 +933,38 @@ class QuizQualityReportController extends ControllerBase {
     /** @var \Drupal\node\NodeInterface[] $nodes */
     $nodes = $node_storage->loadMultiple($nids);
     foreach ($nodes as $node) {
+      if ($focus_tool_id > 0 && (int) $node->id() !== $focus_tool_id) {
+        continue;
+      }
+
       $is_published = method_exists($node, 'isPublished') ? (bool) $node->isPublished() : TRUE;
       $status_label = $node->hasField('field_item_status') && !$node->get('field_item_status')->isEmpty()
         ? (string) $node->get('field_item_status')->entity?->label()
         : '';
       $has_status = $status_label !== '';
+      $is_gone = $this->isGoneToolStatusLabel($status_label);
+      $area_labels = $this->getReferencedEntityLabels($node, 'field_item_area_interest');
+      $category_labels = $this->getReferencedEntityLabels($node, 'field_item_category');
+      $hazard_label = $node->hasField('field_item_hazard_band') && !$node->get('field_item_hazard_band')->isEmpty()
+        ? trim((string) $node->get('field_item_hazard_band')->value)
+        : '';
+      $description = $node->hasField('body') && !$node->get('body')->isEmpty()
+        ? trim(strip_tags((string) $node->get('body')->value))
+        : '';
+      $model = $node->hasField('field_item_model') && !$node->get('field_item_model')->isEmpty()
+        ? trim((string) $node->get('field_item_model')->value)
+        : '';
+      $value_amount = $node->hasField('field_item_value') && !$node->get('field_item_value')->isEmpty()
+        ? (float) $node->get('field_item_value')->value
+        : NULL;
+      $is_individual_asset = $this->isIndividualAsset($node, $category_labels);
 
       $primary_badges = $this->getReferencedTerms($node, 'field_member_badges');
       $additional_badges = $this->getReferencedTerms($node, 'field_additional_badges');
       $all_badges = $this->mergeTermsById($primary_badges, $additional_badges);
+      if ($focus_badge_id > 0 && !$this->termIdExistsInArray($focus_badge_id, $all_badges)) {
+        continue;
+      }
       $primary_badge_links = $this->buildBadgeLinksForTerms($primary_badges);
 
       $badge_quality = $this->evaluateToolBadgeQuality($primary_badges, $all_badges, $badge_quality_by_term);
@@ -849,11 +972,10 @@ class QuizQualityReportController extends ControllerBase {
       $has_instructions = $node->hasField('field_item_instructions') && !$node->get('field_item_instructions')->isEmpty() && trim((string) $node->get('field_item_instructions')->value) !== '';
       $has_manuals = $node->hasField('field_manuals') && !$node->get('field_manuals')->isEmpty();
       $has_video = $node->hasField('field_item_instructional_video') && !$node->get('field_item_instructional_video')->isEmpty();
-      $has_docs = $has_instructions && ($has_manuals || $has_video);
+      $has_docs = $has_instructions || $has_manuals || $has_video;
 
       $has_image = $node->hasField('field_item_image') && !$node->get('field_item_image')->isEmpty();
       $has_location = $node->hasField('field_item_location') && !$node->get('field_item_location')->isEmpty() && trim((string) $node->get('field_item_location')->value) !== '';
-      $has_contact = $node->hasField('field_question_contact') && !$node->get('field_question_contact')->isEmpty() && trim((string) $node->get('field_question_contact')->value) !== '';
 
       $reservable_values = $this->getItemReservableValues($node);
       $is_reservable = !empty($reservable_values);
@@ -873,20 +995,35 @@ class QuizQualityReportController extends ControllerBase {
       if (!$has_status) {
         $issues[] = (string) $this->t('Missing tool status');
       }
+      if (empty($area_labels)) {
+        $issues[] = (string) $this->t('Missing area of interest');
+      }
+      if (empty($category_labels)) {
+        $issues[] = (string) $this->t('Missing category');
+      }
+      if ($hazard_label === '') {
+        $issues[] = (string) $this->t('Missing hazard band');
+      }
+      if ($description === '') {
+        $issues[] = (string) $this->t('Missing description');
+      }
       if (!$badge_quality['ok']) {
         $issues = array_merge($issues, $badge_quality['issues']);
       }
       if (!$has_docs) {
-        $issues[] = (string) $this->t('Missing core documentation (instructions + manual or video)');
+        $issues[] = (string) $this->t('Missing usage documentation (instructions, manual, or video)');
+      }
+      if ($is_individual_asset && $model === '') {
+        $issues[] = (string) $this->t('Missing model for individual asset');
+      }
+      if ($is_individual_asset && ($value_amount === NULL || $value_amount <= 0)) {
+        $issues[] = (string) $this->t('Missing or invalid value for individual asset');
       }
       if (!$has_image) {
         $issues[] = (string) $this->t('Missing image');
       }
       if (!$has_location) {
         $issues[] = (string) $this->t('Missing location');
-      }
-      if (!$has_contact) {
-        $issues[] = (string) $this->t('Missing question contact');
       }
       if ($is_reservable && (!$has_min_advance || !$has_max_duration || !$has_email_template)) {
         $issues[] = (string) $this->t('Incomplete reservation profile for reservable tool');
@@ -902,6 +1039,7 @@ class QuizQualityReportController extends ControllerBase {
       if (!$this->matchesToolStatusFilter(
         $status_filter,
         $is_published,
+        $is_gone,
         $is_reservable,
         empty($primary_badges),
         !$has_docs,
@@ -923,7 +1061,10 @@ class QuizQualityReportController extends ControllerBase {
         ],
         'badge_report' => [
           'title' => $this->t('Badge Quality Report'),
-          'url' => Url::fromRoute('assign_badge_from_quiz.badge_quality_report'),
+          'url' => Url::fromRoute('assign_badge_from_quiz.badge_quality_report', [], ['query' => array_filter([
+            'badge' => !empty($primary_badges) ? (int) reset($primary_badges)->id() : NULL,
+            'status' => 'needs_attention',
+          ])]),
         ],
       ];
       if (!empty($primary_badges)) {
@@ -942,20 +1083,36 @@ class QuizQualityReportController extends ControllerBase {
           ],
         ],
         'status' => $has_status ? $status_label : $this->t('Not set'),
+        'area' => !empty($area_labels) ? implode(', ', $area_labels) : $this->t('Not set'),
+        'category' => !empty($category_labels) ? implode(', ', $category_labels) : $this->t('Not set'),
+        'hazard' => $hazard_label !== '' ? $hazard_label : $this->t('Not set'),
+        'description' => $description !== '' ? Unicode::truncate($description, 110, TRUE, TRUE) : $this->t('Not set'),
         'primary_badge' => [
           'data' => [
-            '#markup' => !empty($primary_badge_links) ? implode(', ', $primary_badge_links) : (string) $this->t('Not set'),
+            '#markup' => !empty($primary_badge_links) ? implode(', ', $primary_badge_links) : (string) $this->t('Not required'),
           ],
         ],
         'badge_quality' => [
-          'data' => $this->buildIndicatorMarkup($badge_quality['ok'], (string) $this->t($badge_quality['ok'] ? 'Greenlight' : 'Redlight'), implode('; ', $badge_quality['issues'])),
+          'data' => $this->buildIndicatorWithLink(
+            $badge_quality['ok'],
+            (string) $this->t($badge_quality['ok'] ? 'Greenlight' : 'Redlight'),
+            implode('; ', $badge_quality['issues']),
+            Url::fromRoute('assign_badge_from_quiz.badge_quality_report', [], ['query' => array_filter([
+              'badge' => !empty($primary_badges) ? (int) reset($primary_badges)->id() : NULL,
+              'status' => 'needs_attention',
+            ])]),
+            (string) $this->t('Open related badge issues')
+          ),
         ],
-        'instructions' => $has_instructions ? $this->t('Yes') : $this->t('No'),
-        'manuals' => $has_manuals ? $this->t('Yes') : $this->t('No'),
-        'video' => $has_video ? $this->t('Yes') : $this->t('No'),
+        'documentation' => implode(' / ', [
+          $has_instructions ? (string) $this->t('Instructions') : (string) $this->t('No instructions'),
+          $has_manuals ? (string) $this->t('Manual') : (string) $this->t('No manual'),
+          $has_video ? (string) $this->t('Video') : (string) $this->t('No video'),
+        ]),
+        'model' => $model !== '' ? $model : ($is_individual_asset ? $this->t('Not set') : $this->t('Grouped item')),
+        'value' => $value_amount !== NULL && $value_amount > 0 ? '$' . number_format($value_amount, 2) : ($is_individual_asset ? $this->t('Not set') : $this->t('Grouped item')),
         'image' => $has_image ? $this->t('Yes') : $this->t('No'),
         'location' => $has_location ? (string) $node->get('field_item_location')->value : $this->t('Not set'),
-        'contact' => $has_contact ? (string) $node->get('field_question_contact')->value : $this->t('Not set'),
         'reservable' => [
           'data' => [
             '#markup' => Html::escape($reservation_profile_label) . ($is_reservable ? '<div class="abfq-indicator-notes">' . Html::escape($this->formatReservableDetails($has_min_advance, $has_max_duration, $has_email_template)) . '</div>' : ''),
@@ -988,6 +1145,10 @@ class QuizQualityReportController extends ControllerBase {
     return [
       'nav' => $this->buildReportNavigation('tool'),
       'filters' => $this->buildToolStatusFilters($status_filter),
+      'focus' => $this->buildFocusSummary([
+        $focus_tool_id > 0 ? (string) $this->t('Focused on tool node ID @nid.', ['@nid' => $focus_tool_id]) : '',
+        $focus_badge_id > 0 ? (string) $this->t('Filtered to tools linked to badge ID @tid.', ['@tid' => $focus_badge_id]) : '',
+      ], 'assign_badge_from_quiz.tool_quality_report', ['status' => $status_filter]),
       'table' => [
         '#type' => 'table',
         '#header' => $header,
@@ -1001,15 +1162,210 @@ class QuizQualityReportController extends ControllerBase {
   }
 
   /**
+   * Builds the facilitator setup quality report.
+   */
+  public function facilitatorSetupReport(): array {
+    $status_filter = (string) (\Drupal::request()->query->get('status') ?? 'needs_attention');
+    $allowed_status_filters = ['all', 'needs_attention', 'ready', 'no_badges', 'no_schedule_now', 'no_coordinator_profile', 'no_slack'];
+    if (!in_array($status_filter, $allowed_status_filters, TRUE)) {
+      $status_filter = 'needs_attention';
+    }
+
+    $header = [
+      'facilitator' => $this->t('Facilitator'),
+      'badge_issuer' => $this->t('Can Badge On Things'),
+      'issuer_breakdown' => $this->t('Issuer Coverage'),
+      'coordinator_profile' => $this->t('Facilitator Profile'),
+      'schedule_now' => $this->t('Current/Future Coverage'),
+      'schedule_summary' => $this->t('Schedule Summary'),
+      'slack_id' => $this->t('Slack ID'),
+      'quality' => $this->t('Quality Status'),
+      'actions' => $this->t('Actions'),
+    ];
+
+    $user_storage = $this->entityTypeManager()->getStorage('user');
+    $uids = $user_storage->getQuery()
+      ->condition('status', 1)
+      ->condition('roles', 'facilitator')
+      ->sort('name', 'ASC')
+      ->accessCheck(TRUE)
+      ->execute();
+
+    if (empty($uids)) {
+      return [
+        'nav' => $this->buildReportNavigation('facilitator'),
+        'filters' => $this->buildFacilitatorStatusFilters($status_filter),
+        'table' => [
+          '#type' => 'table',
+          '#header' => $header,
+          '#rows' => [],
+          '#empty' => $this->t('No active facilitators found.'),
+        ],
+        '#attached' => [
+          'library' => ['core/drupal.dropbutton', 'assign_badge_from_quiz/quality_reports'],
+        ],
+      ];
+    }
+
+    $rows = [];
+    $users = $user_storage->loadMultiple($uids);
+    foreach ($users as $user) {
+      $main_profile = $this->loadUserProfile($user, 'main');
+      $coordinator_profile = $this->loadUserProfile($user, 'coordinator');
+      $main_profile_url = $main_profile
+        ? Url::fromRoute('entity.profile.edit_form', ['profile' => $main_profile->id()])
+        : Url::fromRoute('profile.user_page.single', ['user' => $user->id(), 'profile_type' => 'main']);
+      $coordinator_profile_url = $coordinator_profile
+        ? Url::fromRoute('entity.profile.edit_form', ['profile' => $coordinator_profile->id()])
+        : Url::fromRoute('profile.user_page.single', ['user' => $user->id(), 'profile_type' => 'coordinator']);
+      $badge_report_url = Url::fromRoute('assign_badge_from_quiz.badge_quality_report', [], ['query' => [
+        'status' => 'active',
+        'issuer' => $user->id(),
+      ]]);
+      $slack_id = $main_profile && $main_profile->hasField('field_member_slack_id_number') && !$main_profile->get('field_member_slack_id_number')->isEmpty()
+        ? trim((string) $main_profile->get('field_member_slack_id_number')->value)
+        : '';
+
+      $issuer_counts = $this->getFacilitatorBadgeIssuerCounts((int) $user->id());
+      $schedule_state = $this->getCoordinatorScheduleState($coordinator_profile);
+
+      $issues = [];
+      if ($issuer_counts['total'] <= 0) {
+        $issues[] = (string) $this->t('Not listed as badge issuer on any badge');
+      }
+      if (!$coordinator_profile) {
+        $issues[] = (string) $this->t('Missing coordinator/facilitator profile');
+      }
+      else {
+        if ($schedule_state['hidden']) {
+          $issues[] = (string) $this->t('Coordinator schedule is hidden');
+        }
+        if (!$schedule_state['has_any']) {
+          $issues[] = (string) $this->t('No facilitator hours configured');
+        }
+        elseif (!$schedule_state['has_upcoming']) {
+          $issues[] = (string) $this->t('No current or upcoming schedule coverage');
+        }
+      }
+      if ($slack_id === '') {
+        $issues[] = (string) $this->t('Missing Slack ID on main profile');
+      }
+
+      if (!$this->matchesFacilitatorStatusFilter(
+        $status_filter,
+        empty($issues),
+        $issuer_counts['total'] <= 0,
+        !$schedule_state['has_upcoming'],
+        !$coordinator_profile,
+        $slack_id === ''
+      )) {
+        continue;
+      }
+
+      $actions = [
+        'edit_user' => [
+          'title' => $this->t('Edit user'),
+          'url' => Url::fromRoute('entity.user.edit_form', ['user' => $user->id()]),
+        ],
+        'main_profile' => [
+          'title' => $main_profile ? $this->t('Edit main profile') : $this->t('Create main profile'),
+          'url' => $main_profile_url,
+        ],
+        'coordinator_profile' => [
+          'title' => $coordinator_profile ? $this->t('Edit coordinator profile') : $this->t('Create coordinator profile'),
+          'url' => $coordinator_profile_url,
+        ],
+      ];
+
+      $rows[] = [
+        'facilitator' => Link::fromTextAndUrl($user->getDisplayName(), Url::fromRoute('entity.user.edit_form', ['user' => $user->id()])),
+        'badge_issuer' => [
+          'data' => $this->buildIndicatorWithLink(
+            $issuer_counts['total'] > 0,
+            (string) $this->t($issuer_counts['total'] > 0 ? 'Yes' : 'No'),
+            (string) $this->t('@count active badge(s)', ['@count' => $issuer_counts['total']]),
+            $badge_report_url,
+            (string) $this->t('Open filtered badge report')
+          ),
+        ],
+        'issuer_breakdown' => $this->t('Direct: @direct | On-request: @request', [
+          '@direct' => $issuer_counts['direct'],
+          '@request' => $issuer_counts['on_request'],
+        ]),
+        'coordinator_profile' => [
+          'data' => $this->buildIndicatorWithLink(
+            (bool) $coordinator_profile,
+            (string) $this->t($coordinator_profile ? 'Present' : 'Missing'),
+            '',
+            $coordinator_profile_url,
+            (string) $this->t($coordinator_profile ? 'Edit coordinator profile' : 'Create coordinator profile')
+          ),
+        ],
+        'schedule_now' => [
+          'data' => $this->buildIndicatorWithLink(
+            $schedule_state['has_upcoming'],
+            (string) $this->t(
+              $schedule_state['has_current']
+                ? 'Now'
+                : ($schedule_state['has_upcoming'] ? 'Upcoming' : 'No')
+            ),
+            $schedule_state['hidden']
+              ? (string) $this->t('Schedule is hidden on coordinator profile')
+              : (!$schedule_state['has_any']
+                ? (string) $this->t('No facilitator hours configured')
+                : (!$schedule_state['has_upcoming'] ? (string) $this->t('Only past schedule entries found') : '')),
+            $coordinator_profile_url,
+            (string) $this->t('Open coordinator profile')
+          ),
+        ],
+        'schedule_summary' => $schedule_state['summary'] !== '' ? $schedule_state['summary'] : $this->t('Not set'),
+        'slack_id' => [
+          'data' => $this->buildIndicatorWithLink(
+            $slack_id !== '',
+            $slack_id !== '' ? $slack_id : (string) $this->t('Missing'),
+            $slack_id === '' ? (string) $this->t('Slack ID is stored on the main profile') : '',
+            $main_profile_url,
+            (string) $this->t($main_profile ? 'Edit main profile' : 'Create main profile')
+          ),
+        ],
+        'quality' => [
+          'data' => $this->buildIndicatorMarkup(empty($issues), (string) $this->t(empty($issues) ? 'Greenlight' : 'Redlight'), implode('; ', $issues)),
+        ],
+        'actions' => [
+          'data' => [
+            '#type' => 'operations',
+            '#links' => $actions,
+          ],
+        ],
+      ];
+    }
+
+    return [
+      'nav' => $this->buildReportNavigation('facilitator'),
+      'filters' => $this->buildFacilitatorStatusFilters($status_filter),
+      'table' => [
+        '#type' => 'table',
+        '#header' => $header,
+        '#rows' => $rows,
+        '#empty' => $this->t('No facilitators found for the selected filter.'),
+      ],
+      '#attached' => [
+        'library' => ['core/drupal.dropbutton', 'assign_badge_from_quiz/quality_reports'],
+      ],
+    ];
+  }
+
+  /**
    * Builds status filter links for the tool report.
    */
   protected function buildToolStatusFilters(string $active_filter): array {
     $route = 'assign_badge_from_quiz.tool_quality_report';
     $options = [
-      'all' => $this->t('All'),
       'needs_attention' => $this->t('Needs Attention'),
       'published' => $this->t('Published'),
+      'all' => $this->t('All'),
       'unpublished' => $this->t('Unpublished'),
+      'gone' => $this->t('Gone'),
       'reservable' => $this->t('Reservable'),
       'no_badge' => $this->t('No Badge'),
       'no_docs' => $this->t('No Docs'),
@@ -1037,11 +1393,46 @@ class QuizQualityReportController extends ControllerBase {
   }
 
   /**
+   * Builds status filter links for the facilitator report.
+   */
+  protected function buildFacilitatorStatusFilters(string $active_filter): array {
+    $route = 'assign_badge_from_quiz.facilitator_setup_report';
+    $options = [
+      'needs_attention' => $this->t('Needs Attention'),
+      'ready' => $this->t('Ready'),
+      'all' => $this->t('All'),
+      'no_badges' => $this->t('No Badge Issuer'),
+      'no_schedule_now' => $this->t('No Current/Future Coverage'),
+      'no_coordinator_profile' => $this->t('No Facilitator Profile'),
+      'no_slack' => $this->t('No Slack ID'),
+    ];
+
+    $items = [];
+    foreach ($options as $value => $label) {
+      $link = Link::fromTextAndUrl($label, Url::fromRoute($route, [], ['query' => ['status' => $value]]))->toString();
+      $class = $value === $active_filter ? 'abfq-pill abfq-pill--selected' : 'abfq-pill';
+      $items[] = '<span class="' . $class . '">' . $link . '</span>';
+    }
+
+    return [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['abfq-filter-row']],
+      'label' => [
+        '#markup' => '<strong>' . $this->t('Status Filter:') . '</strong>',
+      ],
+      'links' => [
+        '#markup' => implode(' ', $items),
+      ],
+    ];
+  }
+
+  /**
    * Returns whether a tool matches the current report filter.
    */
   protected function matchesToolStatusFilter(
     string $filter,
     bool $is_published,
+    bool $is_gone,
     bool $is_reservable,
     bool $missing_badge,
     bool $missing_docs,
@@ -1052,14 +1443,191 @@ class QuizQualityReportController extends ControllerBase {
     return match ($filter) {
       'published' => $is_published,
       'unpublished' => !$is_published,
+      'gone' => $is_gone,
       'reservable' => $is_reservable,
       'no_badge' => $missing_badge,
       'no_docs' => $missing_docs,
       'no_slack' => $missing_slack,
       'stale' => $is_stale,
-      'needs_attention' => $has_quality_issues,
+      'needs_attention' => $is_published && !$is_gone && $has_quality_issues,
       default => TRUE,
     };
+  }
+
+  /**
+   * Returns whether a facilitator matches the current report filter.
+   */
+  protected function matchesFacilitatorStatusFilter(
+    string $filter,
+    bool $is_ready,
+    bool $missing_badges,
+    bool $missing_schedule_now,
+    bool $missing_coordinator_profile,
+    bool $missing_slack
+  ): bool {
+    return match ($filter) {
+      'ready' => $is_ready,
+      'no_badges' => $missing_badges,
+      'no_schedule_now' => $missing_schedule_now,
+      'no_coordinator_profile' => $missing_coordinator_profile,
+      'no_slack' => $missing_slack,
+      'needs_attention' => !$is_ready,
+      default => TRUE,
+    };
+  }
+
+  /**
+   * Loads a single profile for a user/bundle combination.
+   */
+  protected function loadUserProfile($user, string $bundle) {
+    $profiles = $this->entityTypeManager()->getStorage('profile')->loadByUser($user, $bundle);
+    if (is_array($profiles)) {
+      return reset($profiles) ?: NULL;
+    }
+    return $profiles ?: NULL;
+  }
+
+  /**
+   * Counts badges a facilitator can issue.
+   */
+  protected function getFacilitatorBadgeIssuerCounts(int $uid): array {
+    $term_storage = $this->entityTypeManager()->getStorage('taxonomy_term');
+    $direct_ids = $term_storage->getQuery()
+      ->condition('vid', 'badges')
+      ->condition('field_badge_issuer', $uid)
+      ->accessCheck(TRUE)
+      ->execute();
+    $on_request_ids = $term_storage->getQuery()
+      ->condition('vid', 'badges')
+      ->condition('field_badge_issuer_on_request', $uid)
+      ->accessCheck(TRUE)
+      ->execute();
+
+    $all_ids = array_unique(array_merge(array_values($direct_ids), array_values($on_request_ids)));
+    if ($all_ids === []) {
+      return [
+        'direct' => 0,
+        'on_request' => 0,
+        'total' => 0,
+      ];
+    }
+
+    $terms = $term_storage->loadMultiple($all_ids);
+    $direct = 0;
+    $on_request = 0;
+    $all = [];
+    foreach ($terms as $term) {
+      if (!$this->isActionableBadgeTerm($term)) {
+        continue;
+      }
+      $tid = (int) $term->id();
+      $all[$tid] = TRUE;
+      if ($this->isUserReferencedInBadgeIssuerField($term, 'field_badge_issuer', $uid)) {
+        $direct++;
+      }
+      if ($this->isUserReferencedInBadgeIssuerField($term, 'field_badge_issuer_on_request', $uid)) {
+        $on_request++;
+      }
+    }
+
+    return [
+      'direct' => $direct,
+      'on_request' => $on_request,
+      'total' => count($all),
+    ];
+  }
+
+  /**
+   * Returns schedule state for a coordinator profile.
+   */
+  protected function getCoordinatorScheduleState($profile): array {
+    $state = [
+      'hidden' => FALSE,
+      'has_any' => FALSE,
+      'has_current' => FALSE,
+      'has_upcoming' => FALSE,
+      'summary' => '',
+    ];
+    if (!$profile) {
+      return $state;
+    }
+
+    if ($profile->hasField('field_coordinator_hours_display')
+      && !$profile->get('field_coordinator_hours_display')->isEmpty()
+      && $profile->get('field_coordinator_hours_display')->value === 'hide') {
+      $state['hidden'] = TRUE;
+    }
+
+    if (!$profile->hasField('field_coordinator_hours') || $profile->get('field_coordinator_hours')->isEmpty()) {
+      return $state;
+    }
+
+    $slots = $this->getCoordinatorHourSlots($profile);
+    if ($slots === []) {
+      return $state;
+    }
+
+    $state['has_any'] = TRUE;
+    $state['summary'] = $this->formatCoordinatorHoursSummary($profile, $slots);
+
+    $now = \Drupal::time()->getRequestTime();
+    foreach ($slots as $slot) {
+      $start = $slot['start'];
+      $end = $slot['end'];
+      if ($start > 0 && $end > 0 && $start <= $now && $end >= $now) {
+        $state['has_current'] = TRUE;
+        $state['has_upcoming'] = TRUE;
+      }
+      elseif ($end > 0 && $end >= $now) {
+        $state['has_upcoming'] = TRUE;
+      }
+    }
+
+    return $state;
+  }
+
+  /**
+   * Formats coordinator hours into a compact summary.
+   */
+  protected function formatCoordinatorHoursSummary($profile, ?array $slots = NULL): string {
+    $raw = $slots ?? $this->getCoordinatorHourSlots($profile);
+    usort($raw, fn($a, $b) => $a['ts'] <=> $b['ts']);
+    $slots = [];
+    foreach ($raw as $entry) {
+      $start_ts = $entry['ts'] ?? $entry['start'] ?? 0;
+      $end_ts = $entry['end'] ?? 0;
+      $day = \Drupal::service('date.formatter')->format($start_ts, 'custom', 'D');
+      if (isset($slots[$day])) {
+        continue;
+      }
+      $start = \Drupal::service('date.formatter')->format($start_ts, 'custom', 'g:ia');
+      $end = $end_ts > $start_ts ? \Drupal::service('date.formatter')->format($end_ts, 'custom', 'g:ia') : '';
+      $slots[$day] = $end ? $day . ' ' . $start . '–' . $end : $day . ' ' . $start;
+    }
+
+    return implode(' · ', array_values($slots));
+  }
+
+  /**
+   * Resolves stored coordinator availability occurrence slots.
+   */
+  protected function getCoordinatorHourSlots($profile): array {
+    $slots = [];
+    foreach ($profile->get('field_coordinator_hours')->getValue() as $item) {
+      $start_ts = isset($item['value']) ? (int) $item['value'] : 0;
+      $end_ts = isset($item['end_value']) ? (int) $item['end_value'] : 0;
+      if ($start_ts <= 0) {
+        continue;
+      }
+
+      $slots[] = [
+        'ts' => $start_ts,
+        'start' => $start_ts,
+        'end' => $end_ts,
+      ];
+    }
+
+    return $slots;
   }
 
   /**
@@ -1099,13 +1667,10 @@ class QuizQualityReportController extends ControllerBase {
    */
   protected function evaluateToolBadgeQuality(array $primary_badges, array $all_badges, array $badge_quality_by_term): array {
     $issues = [];
-    if (empty($primary_badges)) {
-      $issues[] = (string) $this->t('Missing required badge');
-    }
     if (empty($all_badges)) {
       return [
-        'ok' => empty($issues),
-        'issues' => $issues,
+        'ok' => TRUE,
+        'issues' => [(string) $this->t('No badge required')],
       ];
     }
 
@@ -1122,6 +1687,23 @@ class QuizQualityReportController extends ControllerBase {
       'ok' => empty($issues),
       'issues' => !empty($issues) ? $issues : [(string) $this->t('All linked badges pass quality checks')],
     ];
+  }
+
+  /**
+   * Returns referenced entity labels for a node field.
+   */
+  protected function getReferencedEntityLabels($node, string $field_name): array {
+    $labels = [];
+    if (!$node->hasField($field_name) || $node->get($field_name)->isEmpty()) {
+      return [];
+    }
+    foreach ($node->get($field_name)->referencedEntities() as $entity) {
+      $label = trim((string) $entity->label());
+      if ($label !== '') {
+        $labels[] = $label;
+      }
+    }
+    return array_values(array_unique($labels));
   }
 
   /**
@@ -1213,6 +1795,79 @@ class QuizQualityReportController extends ControllerBase {
       'class' => (string) $this->t('Submit documentation or complete a workshop'),
       default => (string) $this->t('Unknown'),
     };
+  }
+
+  /**
+   * Returns TRUE when a badge should count toward actionable quality rollups.
+   */
+  protected function isActionableBadgeTerm($term): bool {
+    $is_published = method_exists($term, 'isPublished') ? (bool) $term->isPublished() : TRUE;
+    $is_inactive = $term->hasField('field_badge_inactive') && (bool) $term->get('field_badge_inactive')->value;
+    $is_unlisted = $term->hasField('field_badge_unlisted') && (bool) $term->get('field_badge_unlisted')->value;
+    return $is_published && !$is_inactive && !$is_unlisted;
+  }
+
+  /**
+   * Returns TRUE when the user is referenced on either badge issuer field.
+   */
+  protected function isUserReferencedInBadgeIssuerFields($term, int $uid): bool {
+    return $this->isUserReferencedInBadgeIssuerField($term, 'field_badge_issuer', $uid)
+      || $this->isUserReferencedInBadgeIssuerField($term, 'field_badge_issuer_on_request', $uid);
+  }
+
+  /**
+   * Returns TRUE when the user is referenced on a specific badge issuer field.
+   */
+  protected function isUserReferencedInBadgeIssuerField($term, string $field_name, int $uid): bool {
+    if (!$term->hasField($field_name) || $term->get($field_name)->isEmpty()) {
+      return FALSE;
+    }
+
+    foreach ($term->get($field_name)->getValue() as $item) {
+      if ((int) ($item['target_id'] ?? 0) === $uid) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Returns TRUE when a tool status label means the tool is effectively gone.
+   */
+  protected function isGoneToolStatusLabel(string $status_label): bool {
+    $normalized = mb_strtolower(trim($status_label));
+    return in_array($normalized, ['gone', 'retired', 'missing'], TRUE);
+  }
+
+  /**
+   * Returns TRUE when the item looks like an individual asset.
+   */
+  protected function isIndividualAsset($node, array $category_labels): bool {
+    if ($node->hasField('field_item_set') && !$node->get('field_item_set')->isEmpty()) {
+      return FALSE;
+    }
+
+    foreach ($category_labels as $label) {
+      $normalized = mb_strtolower(trim($label));
+      if (in_array($normalized, ['room', 'rooms', 'zone', 'zones', 'area', 'areas', 'set', 'sets'], TRUE)) {
+        return FALSE;
+      }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Returns TRUE when the provided term id exists in a referenced term list.
+   */
+  protected function termIdExistsInArray(int $tid, array $terms): bool {
+    foreach ($terms as $term) {
+      if ((int) $term->id() === $tid) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
 }

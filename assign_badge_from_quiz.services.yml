@@ -27,3 +27,10 @@ services:
       - '@config.factory'
     tags:
       - { name: event_subscriber }
+
+  assign_badge_from_quiz.quiz_canonical_redirect_subscriber:
+    class: Drupal\assign_badge_from_quiz\EventSubscriber\QuizCanonicalRedirectSubscriber
+    arguments:
+      - '@current_user'
+    tags:
+      - { name: event_subscriber }
