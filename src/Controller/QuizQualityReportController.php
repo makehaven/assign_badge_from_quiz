@@ -703,6 +703,7 @@ class QuizQualityReportController extends ControllerBase {
     $quiz_link = Link::fromTextAndUrl($this->t('Quiz Quality Report'), Url::fromRoute('assign_badge_from_quiz.quality_report'))->toString();
     $badge_link = Link::fromTextAndUrl($this->t('Badge Quality Report'), Url::fromRoute('assign_badge_from_quiz.badge_quality_report'))->toString();
     $tool_link = Link::fromTextAndUrl($this->t('Tool Quality Report'), Url::fromRoute('assign_badge_from_quiz.tool_quality_report'))->toString();
+    $tool_ai_link = Link::fromTextAndUrl($this->t('Tool AI Quality Report'), Url::fromRoute('assign_badge_from_quiz.tool_ai_quality_report'))->toString();
     $facilitator_link = Link::fromTextAndUrl($this->t('Facilitator Setup Report'), Url::fromRoute('assign_badge_from_quiz.facilitator_setup_report'))->toString();
 
     return [
@@ -716,6 +717,9 @@ class QuizQualityReportController extends ControllerBase {
       ],
       'tool' => [
         '#markup' => '<span class="' . ($current === 'tool' ? 'abfq-pill abfq-pill--selected' : 'abfq-pill') . '">' . $tool_link . '</span>',
+      ],
+      'tool_ai' => [
+        '#markup' => '<span class="' . ($current === 'tool_ai' ? 'abfq-pill abfq-pill--selected' : 'abfq-pill') . '">' . $tool_ai_link . '</span>',
       ],
       'facilitator' => [
         '#markup' => '<span class="' . ($current === 'facilitator' ? 'abfq-pill abfq-pill--selected' : 'abfq-pill') . '">' . $facilitator_link . '</span>',
@@ -1162,6 +1166,197 @@ class QuizQualityReportController extends ControllerBase {
   }
 
   /**
+   * Builds the tool AI quality report from item nodes.
+   */
+  public function toolAiQualityReport(): array {
+    $status_filter = (string) (\Drupal::request()->query->get('status') ?? 'needs_attention');
+    $allowed_status_filters = ['all', 'needs_attention', 'ready', 'missing_context', 'missing_transcript', 'missing_timestamps', 'manuals_unprocessed', 'feedback_flagged', 'suspect_answers'];
+    if (!in_array($status_filter, $allowed_status_filters, TRUE)) {
+      $status_filter = 'needs_attention';
+    }
+    $focus_tool_id = $this->getPositiveQueryInt('tool');
+
+    $header = [
+      'tool' => $this->t('Tool'),
+      'hazard' => $this->t('Hazard'),
+      'ai_context' => $this->t('AI Context'),
+      'source_coverage' => $this->t('AI Source Coverage'),
+      'feedback' => $this->t('Feedback / Suspect Answers'),
+      'quality' => $this->t('AI Quality Status'),
+      'actions' => $this->t('Actions'),
+    ];
+
+    $rows = [];
+    $node_storage = $this->entityTypeManager()->getStorage('node');
+    $nids = $node_storage->getQuery()
+      ->condition('type', 'item')
+      ->sort('title', 'ASC')
+      ->accessCheck(TRUE)
+      ->execute();
+
+    if (empty($nids)) {
+      return [
+        'nav' => $this->buildReportNavigation('tool_ai'),
+        'filters' => $this->buildToolAiStatusFilters($status_filter),
+        'table' => [
+          '#type' => 'table',
+          '#header' => $header,
+          '#rows' => [],
+          '#empty' => $this->t('No tool pages found.'),
+        ],
+        '#attached' => [
+          'library' => ['core/drupal.dropbutton', 'assign_badge_from_quiz/quality_reports'],
+        ],
+      ];
+    }
+
+    foreach ($node_storage->loadMultiple($nids) as $node) {
+      if ($focus_tool_id > 0 && (int) $node->id() !== $focus_tool_id) {
+        continue;
+      }
+
+      $hazard_label = $node->hasField('field_item_hazard_band') && !$node->get('field_item_hazard_band')->isEmpty()
+        ? trim((string) $node->get('field_item_hazard_band')->value)
+        : '';
+      $has_ai_context = $node->hasField('field_item_ai_context') && !$node->get('field_item_ai_context')->isEmpty() && trim((string) $node->get('field_item_ai_context')->value) !== '';
+      $has_ai_suggestions = $node->hasField('field_item_ai_suggestions') && !$node->get('field_item_ai_suggestions')->isEmpty() && trim((string) $node->get('field_item_ai_suggestions')->value) !== '';
+
+      $instructions_markup = $node->hasField('field_item_instructions') && !$node->get('field_item_instructions')->isEmpty()
+        ? (string) ($node->get('field_item_instructions')->value ?? '')
+        : '';
+      $instruction_anchor_count = $this->countStructuredDocAnchors($instructions_markup);
+
+      $transcript_stats = $this->getToolTranscriptStats($node);
+      $manual_stats = $this->getToolManualAiStats($node);
+      $feedback_stats = $this->getToolAiFeedbackStats((int) $node->id(), (string) $node->label());
+
+      $issues = [];
+      if (!$has_ai_context) {
+        $issues[] = (string) $this->t('Missing staff AI context summary');
+      }
+      if ($instruction_anchor_count <= 0) {
+        $issues[] = (string) $this->t('Instructions lack headings that make section links useful');
+      }
+      if ($transcript_stats['transcripts'] <= 0) {
+        $issues[] = (string) $this->t('Missing transcript coverage for AI grounding');
+      }
+      if ($transcript_stats['timestamps'] <= 0) {
+        $issues[] = (string) $this->t('Missing timestamp links for source-first answers');
+      }
+      if ($manual_stats['total'] > 0 && $manual_stats['with_text'] < $manual_stats['total']) {
+        $issues[] = (string) $this->t('One or more manuals are missing extracted text');
+      }
+      if ($feedback_stats['feedback_count'] > 0) {
+        $issues[] = (string) $this->t('Member feedback flags need review');
+      }
+      if ($feedback_stats['suspect_count'] > 0) {
+        $issues[] = (string) $this->t('Suspect chatbot answers detected in logs');
+      }
+
+      if (!$this->matchesToolAiStatusFilter(
+        $status_filter,
+        !$has_ai_context,
+        $transcript_stats['transcripts'] <= 0,
+        $transcript_stats['timestamps'] <= 0,
+        $manual_stats['total'] > 0 && $manual_stats['with_text'] < $manual_stats['total'],
+        $feedback_stats['feedback_count'] > 0,
+        $feedback_stats['suspect_count'] > 0,
+        empty($issues)
+      )) {
+        continue;
+      }
+
+      $source_lines = [];
+      $source_lines[] = (string) $this->t('Instruction headings: @count', ['@count' => $instruction_anchor_count]);
+      $source_lines[] = (string) $this->t('Transcripts: @count', ['@count' => $transcript_stats['transcripts']]);
+      $source_lines[] = (string) $this->t('Tool transcripts: @count | Badge transcripts: @badge', [
+        '@count' => $transcript_stats['tool_transcripts'],
+        '@badge' => $transcript_stats['badge_transcripts'],
+      ]);
+      $source_lines[] = (string) $this->t('Timestamp links: @count', ['@count' => $transcript_stats['timestamps']]);
+      $source_lines[] = (string) $this->t('Tool timestamps: @count | Badge timestamps: @badge', [
+        '@count' => $transcript_stats['tool_timestamps'],
+        '@badge' => $transcript_stats['badge_timestamps'],
+      ]);
+      $source_lines[] = (string) $this->t('Manuals with extracted text: @done/@total', ['@done' => $manual_stats['with_text'], '@total' => $manual_stats['total']]);
+      if ($manual_stats['with_summary'] > 0 || $manual_stats['total'] > 0) {
+        $source_lines[] = (string) $this->t('Manual AI summaries: @done/@total', ['@done' => $manual_stats['with_summary'], '@total' => $manual_stats['total']]);
+      }
+
+      $actions = [
+        'edit_tool' => [
+          'title' => $this->t('Edit tool'),
+          'url' => Url::fromRoute('entity.node.edit_form', ['node' => $node->id()]),
+        ],
+        'view_tool' => [
+          'title' => $this->t('View tool'),
+          'url' => Url::fromRoute('entity.node.canonical', ['node' => $node->id()]),
+        ],
+        'tool_quality' => [
+          'title' => $this->t('Tool Quality Report'),
+          'url' => Url::fromRoute('assign_badge_from_quiz.tool_quality_report', [], ['query' => ['tool' => $node->id(), 'status' => 'needs_attention']]),
+        ],
+        'tool_ai_focus' => [
+          'title' => $this->t('Focus this tool'),
+          'url' => Url::fromRoute('assign_badge_from_quiz.tool_ai_quality_report', [], ['query' => ['tool' => $node->id(), 'status' => $status_filter]]),
+        ],
+      ];
+
+      $rows[] = [
+        'tool' => Link::fromTextAndUrl($node->label(), Url::fromRoute('entity.node.edit_form', ['node' => $node->id()])),
+        'hazard' => $hazard_label !== '' ? $hazard_label : $this->t('Not set'),
+        'ai_context' => [
+          'data' => [
+            '#markup' => implode('<br>', [
+              Html::escape((string) $this->t('Staff summary: @state', ['@state' => $has_ai_context ? 'Yes' : 'No'])),
+              Html::escape((string) $this->t('Learned suggestions: @state', ['@state' => $has_ai_suggestions ? 'Yes' : 'No'])),
+            ]),
+          ],
+        ],
+        'source_coverage' => [
+          'data' => [
+            '#markup' => Html::escape(array_shift($source_lines)) . '<div class="abfq-indicator-notes">' . Html::escape(implode(' | ', $source_lines)) . '</div>',
+          ],
+        ],
+        'feedback' => [
+          'data' => [
+            '#markup' => $this->buildToolAiFeedbackMarkup($feedback_stats),
+          ],
+        ],
+        'quality' => [
+          'data' => $this->buildIndicatorMarkup(empty($issues), (string) $this->t(empty($issues) ? 'Greenlight' : 'Redlight'), implode('; ', $issues)),
+        ],
+        'actions' => [
+          'data' => [
+            '#type' => 'operations',
+            '#links' => $actions,
+          ],
+        ],
+      ];
+    }
+
+    return [
+      'nav' => $this->buildReportNavigation('tool_ai'),
+      'filters' => $this->buildToolAiStatusFilters($status_filter),
+      'focus' => $this->buildFocusSummary([
+        $focus_tool_id > 0 ? (string) $this->t('Focused on tool node ID @nid.', ['@nid' => $focus_tool_id]) : '',
+      ], 'assign_badge_from_quiz.tool_ai_quality_report', ['status' => $status_filter]),
+      'summary' => [
+        '#markup' => '<div class="abfq-focus-summary">' . Html::escape((string) $this->t('This report is AI-focused: it highlights grounding coverage, including connected badge transcripts and timestamps, plus manual extraction and user-flagged answers that affect chatbot quality.')) . '</div>',
+      ],
+      'table' => [
+        '#type' => 'table',
+        '#header' => $header,
+        '#rows' => $rows,
+        '#empty' => $this->t('No tool pages found for the selected filter.'),
+      ],
+      '#attached' => [
+        'library' => ['core/drupal.dropbutton', 'assign_badge_from_quiz/quality_reports'],
+      ],
+    ];
+  }
+
+  /**
    * Builds the facilitator setup quality report.
    */
   public function facilitatorSetupReport(): array {
@@ -1393,6 +1588,42 @@ class QuizQualityReportController extends ControllerBase {
   }
 
   /**
+   * Builds status filter links for the tool AI report.
+   */
+  protected function buildToolAiStatusFilters(string $active_filter): array {
+    $route = 'assign_badge_from_quiz.tool_ai_quality_report';
+    $options = [
+      'needs_attention' => $this->t('Needs Attention'),
+      'ready' => $this->t('Ready'),
+      'all' => $this->t('All'),
+      'missing_context' => $this->t('No AI Summary'),
+      'missing_transcript' => $this->t('No Transcript'),
+      'missing_timestamps' => $this->t('No Timestamps'),
+      'manuals_unprocessed' => $this->t('Manuals Unprocessed'),
+      'feedback_flagged' => $this->t('Feedback Flagged'),
+      'suspect_answers' => $this->t('Suspect Answers'),
+    ];
+
+    $items = [];
+    foreach ($options as $value => $label) {
+      $link = Link::fromTextAndUrl($label, Url::fromRoute($route, [], ['query' => ['status' => $value]]))->toString();
+      $class = $value === $active_filter ? 'abfq-pill abfq-pill--selected' : 'abfq-pill';
+      $items[] = '<span class="' . $class . '">' . $link . '</span>';
+    }
+
+    return [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['abfq-filter-row']],
+      'label' => [
+        '#markup' => '<strong>' . $this->t('Status Filter:') . '</strong>',
+      ],
+      'links' => [
+        '#markup' => implode(' ', $items),
+      ],
+    ];
+  }
+
+  /**
    * Builds status filter links for the facilitator report.
    */
   protected function buildFacilitatorStatusFilters(string $active_filter): array {
@@ -1450,6 +1681,32 @@ class QuizQualityReportController extends ControllerBase {
       'no_slack' => $missing_slack,
       'stale' => $is_stale,
       'needs_attention' => $is_published && !$is_gone && $has_quality_issues,
+      default => TRUE,
+    };
+  }
+
+  /**
+   * Returns whether a tool matches the current AI quality report filter.
+   */
+  protected function matchesToolAiStatusFilter(
+    string $filter,
+    bool $missing_context,
+    bool $missing_transcript,
+    bool $missing_timestamps,
+    bool $manuals_unprocessed,
+    bool $feedback_flagged,
+    bool $suspect_answers,
+    bool $is_ready
+  ): bool {
+    return match ($filter) {
+      'ready' => $is_ready,
+      'missing_context' => $missing_context,
+      'missing_transcript' => $missing_transcript,
+      'missing_timestamps' => $missing_timestamps,
+      'manuals_unprocessed' => $manuals_unprocessed,
+      'feedback_flagged' => $feedback_flagged,
+      'suspect_answers' => $suspect_answers,
+      'needs_attention' => !$is_ready,
       default => TRUE,
     };
   }
@@ -1687,6 +1944,275 @@ class QuizQualityReportController extends ControllerBase {
       'ok' => empty($issues),
       'issues' => !empty($issues) ? $issues : [(string) $this->t('All linked badges pass quality checks')],
     ];
+  }
+
+  /**
+   * Counts heading-like structures that can support useful section links.
+   */
+  protected function countStructuredDocAnchors(string $markup): int {
+    if (trim($markup) === '') {
+      return 0;
+    }
+
+    preg_match_all('/<(h2|h3|h4)\b/i', $markup, $matches);
+    return count($matches[0] ?? []);
+  }
+
+  /**
+   * Returns transcript and timestamp coverage for a tool.
+   */
+  protected function getToolTranscriptStats($node): array {
+    $tool_transcripts = 0;
+    $tool_timestamps = 0;
+    $badge_transcripts = 0;
+    $badge_timestamps = 0;
+
+    if ($node->hasField('field_item_videos') && !$node->get('field_item_videos')->isEmpty()) {
+      foreach ($node->get('field_item_videos')->referencedEntities() as $paragraph) {
+        if ($paragraph->bundle() !== 'tool_video') {
+          continue;
+        }
+        if ($paragraph->hasField('field_video_transcript') && !$paragraph->get('field_video_transcript')->isEmpty() && trim((string) $paragraph->get('field_video_transcript')->value) !== '') {
+          $tool_transcripts++;
+        }
+        if ($paragraph->hasField('field_video_timestamps') && !$paragraph->get('field_video_timestamps')->isEmpty()) {
+          $tool_timestamps += count($paragraph->get('field_video_timestamps')->getValue());
+        }
+      }
+    }
+
+    foreach (['field_member_badges', 'field_additional_badges'] as $field_name) {
+      if (!$node->hasField($field_name) || $node->get($field_name)->isEmpty()) {
+        continue;
+      }
+      foreach ($node->get($field_name)->referencedEntities() as $term) {
+        if ($term->hasField('field_badge_video_transcript') && !$term->get('field_badge_video_transcript')->isEmpty() && trim((string) $term->get('field_badge_video_transcript')->value) !== '') {
+          $badge_transcripts++;
+        }
+        if ($term->hasField('field_badge_video_timestamps') && !$term->get('field_badge_video_timestamps')->isEmpty()) {
+          $badge_timestamps += count($term->get('field_badge_video_timestamps')->getValue());
+        }
+      }
+    }
+
+    return [
+      'tool_transcripts' => $tool_transcripts,
+      'tool_timestamps' => $tool_timestamps,
+      'badge_transcripts' => $badge_transcripts,
+      'badge_timestamps' => $badge_timestamps,
+      'transcripts' => $tool_transcripts + $badge_transcripts,
+      'timestamps' => $tool_timestamps + $badge_timestamps,
+    ];
+  }
+
+  /**
+   * Returns manual extraction and summary coverage for a tool.
+   */
+  protected function getToolManualAiStats($node): array {
+    $stats = [
+      'total' => 0,
+      'with_text' => 0,
+      'with_summary' => 0,
+    ];
+
+    if (!$node->hasField('field_manuals') || $node->get('field_manuals')->isEmpty()) {
+      return $stats;
+    }
+
+    foreach ($node->get('field_manuals') as $item) {
+      $file = $item->entity;
+      if (!$file) {
+        continue;
+      }
+      $stats['total']++;
+      if ($file->hasField('field_manual_extracted_text') && !$file->get('field_manual_extracted_text')->isEmpty() && trim((string) $file->get('field_manual_extracted_text')->value) !== '') {
+        $stats['with_text']++;
+      }
+      if ($file->hasField('field_manual_ai_summary') && !$file->get('field_manual_ai_summary')->isEmpty() && trim((string) $file->get('field_manual_ai_summary')->value) !== '') {
+        $stats['with_summary']++;
+      }
+    }
+
+    return $stats;
+  }
+
+  /**
+   * Returns explicit feedback and heuristic suspect-answer counts for a tool.
+   */
+  protected function getToolAiFeedbackStats(int $nid, string $tool_name): array {
+    $feedback_count = 0;
+    $top_categories = [];
+    $recent_feedback = [];
+    if ($this->database->schema()->tableExists('makerspace_ai_chat_feedback')) {
+      $feedback_rows = $this->database->select('makerspace_ai_chat_feedback', 'f')
+        ->fields('f', ['category', 'question_excerpt', 'answer_excerpt', 'user_note', 'created'])
+        ->condition('nid', $nid)
+        ->orderBy('created', 'DESC')
+        ->execute()
+        ->fetchAll();
+      $feedback_count = count($feedback_rows);
+      if (!empty($feedback_rows)) {
+        $counts = array_count_values(array_map(static fn($row): string => strtoupper((string) $row->category), $feedback_rows));
+        arsort($counts);
+        $top_categories = array_slice(array_keys($counts), 0, 3);
+        foreach (array_slice($feedback_rows, 0, 3) as $row) {
+          $question = trim((string) ($row->question_excerpt ?? ''));
+          $answer = trim((string) ($row->answer_excerpt ?? ''));
+          $note = trim((string) ($row->user_note ?? ''));
+          if ($question === '' && $answer === '' && $note === '') {
+            continue;
+          }
+          $recent_feedback[] = [
+            'category' => strtoupper((string) $row->category),
+            'question' => $question,
+            'answer' => $answer,
+            'note' => $note,
+          ];
+        }
+      }
+    }
+
+    $suspect_count = 0;
+    $recent_suspects = [];
+    $safe_name = $this->database->escapeLike($tool_name);
+    $rows = $this->database->select('ai_log', 'l')
+      ->fields('l', ['prompt', 'output_text'])
+      ->condition('extra_data', '%"Tool: ' . $safe_name . '%', 'LIKE')
+      ->orderBy('created', 'DESC')
+      ->range(0, 80)
+      ->execute()
+      ->fetchAll();
+
+    foreach ($rows as $row) {
+      $question = trim(preg_replace('/^user\n?/i', '', (string) ($row->prompt ?? '')));
+      $answer = $this->extractAiLogAnswerText((string) ($row->output_text ?? ''));
+      if ($question === '' || $answer === '') {
+        continue;
+      }
+      if ($this->isSuspectToolAnswer($question, $answer)) {
+        $suspect_count++;
+        if (count($recent_suspects) < 3) {
+          $recent_suspects[] = [
+            'question' => $question,
+            'answer' => $answer,
+          ];
+        }
+      }
+    }
+
+    return [
+      'feedback_count' => $feedback_count,
+      'top_categories' => $top_categories,
+      'recent_feedback' => $recent_feedback,
+      'suspect_count' => $suspect_count,
+      'recent_suspects' => $recent_suspects,
+    ];
+  }
+
+  /**
+   * Builds formatted markup for the tool AI feedback report cell.
+   */
+  protected function buildToolAiFeedbackMarkup(array $feedback_stats): string {
+    $summary_parts = [
+      Html::escape((string) $this->t('Flags: @count', ['@count' => $feedback_stats['feedback_count'] ?? 0])),
+      Html::escape((string) $this->t('Suspect answers: @count', ['@count' => $feedback_stats['suspect_count'] ?? 0])),
+    ];
+
+    if (empty($feedback_stats['top_categories']) && empty($feedback_stats['recent_feedback']) && empty($feedback_stats['recent_suspects'])) {
+      return implode('<br>', $summary_parts);
+    }
+
+    $details = [];
+    if (!empty($feedback_stats['top_categories'])) {
+      $details[] = '<div><strong>' . Html::escape((string) $this->t('Categories')) . ':</strong> ' . Html::escape(implode(', ', $feedback_stats['top_categories'])) . '</div>';
+    }
+    if (!empty($feedback_stats['recent_feedback'])) {
+      $items = array_map(function (array $item): string {
+        $parts = [];
+        $parts[] = '<div><strong>' . Html::escape((string) $this->t('Category')) . ':</strong> ' . Html::escape($item['category'] ?? '') . '</div>';
+        if (!empty($item['question'])) {
+          $parts[] = '<div><strong>' . Html::escape((string) $this->t('Question')) . ':</strong> ' . Html::escape($item['question']) . '</div>';
+        }
+        if (!empty($item['answer'])) {
+          $parts[] = '<div><strong>' . Html::escape((string) $this->t('AI answer')) . ':</strong> ' . Html::escape($item['answer']) . '</div>';
+        }
+        if (!empty($item['note'])) {
+          $parts[] = '<div><strong>' . Html::escape((string) $this->t('Member note')) . ':</strong> ' . Html::escape($item['note']) . '</div>';
+        }
+        return '<li>' . implode('', $parts) . '</li>';
+      }, $feedback_stats['recent_feedback']);
+      $details[] = '<div><strong>' . Html::escape((string) $this->t('Recent feedback')) . ':</strong><ul class="abfq-compact-list">' . implode('', $items) . '</ul></div>';
+    }
+    if (!empty($feedback_stats['recent_suspects'])) {
+      $items = array_map(function (array $item): string {
+        $parts = [];
+        if (!empty($item['question'])) {
+          $parts[] = '<div><strong>' . Html::escape((string) $this->t('Question')) . ':</strong> ' . Html::escape($item['question']) . '</div>';
+        }
+        if (!empty($item['answer'])) {
+          $parts[] = '<div><strong>' . Html::escape((string) $this->t('AI answer')) . ':</strong> ' . Html::escape($item['answer']) . '</div>';
+        }
+        return '<li>' . implode('', $parts) . '</li>';
+      }, $feedback_stats['recent_suspects']);
+      $details[] = '<div><strong>' . Html::escape((string) $this->t('Recent suspect topics')) . ':</strong><ul class="abfq-compact-list">' . implode('', $items) . '</ul></div>';
+    }
+
+    return '<div>' . implode('<br>', $summary_parts) . '</div>'
+      . '<details class="abfq-details"><summary>' . Html::escape((string) $this->t('View details')) . '</summary>'
+      . '<div class="abfq-indicator-notes">' . implode('', $details) . '</div></details>';
+  }
+
+  /**
+   * Extracts assistant reply text from ai_log output_text.
+   */
+  protected function extractAiLogAnswerText(string $output_text): string {
+    if ($output_text === '') {
+      return '';
+    }
+
+    $decoded = json_decode($output_text, TRUE);
+    if (is_array($decoded)) {
+      $content = $decoded['choices'][0]['message']['content'] ?? NULL;
+      if (is_string($content) && $content !== '') {
+        return trim($content);
+      }
+    }
+
+    if (strlen($output_text) < 5000 && !str_starts_with(trim($output_text), '{')) {
+      return trim($output_text);
+    }
+
+    return '';
+  }
+
+  /**
+   * Returns TRUE when a tool answer looks likely to need staff review.
+   */
+  protected function isSuspectToolAnswer(string $question, string $answer): bool {
+    $q = mb_strtolower($question);
+    $a = mb_strtolower($answer);
+
+    $settings_question = preg_match('/\b(ppi|speed|power|rpm|psi|settings?|temperature|feed|feeds|mylar|plywood|acrylic|vector|raster)\b/i', $question) === 1;
+    $numeric_answer = preg_match('/\b\d+(?:\.\d+)?\s*(?:%|ppi|rpm|psi|watt|watts|in|inch|mm|°|deg)?\b/i', $answer) === 1;
+    if ($settings_question && $numeric_answer) {
+      return TRUE;
+    }
+
+    if (str_contains($q, 'where did you get') || str_contains($q, 'made it up') || str_contains($q, 'double check') || str_contains($q, 'not finding')) {
+      return TRUE;
+    }
+
+    if ((str_contains($q, 'help me replace') || str_contains($q, 'replace the lens') || str_contains($q, 'take apart'))
+      && preg_match('/\b1\.|\b2\.|\b3\.|turn off|unscrew|remove|install|reattach/i', $answer) === 1) {
+      return TRUE;
+    }
+
+    if ((str_contains($a, "i don't know how to answer that yet") || str_contains($a, 'ask in #'))
+      && (str_contains($q, 'the table says') || str_contains($q, 'double check') || str_contains($q, 'where did you get'))) {
+      return TRUE;
+    }
+
+    return FALSE;
   }
 
   /**

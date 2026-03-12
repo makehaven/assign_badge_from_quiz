@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Url;
+use Drupal\node\NodeInterface;
 use Drupal\quiz\Entity\QuizResult;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Response;
@@ -71,6 +72,11 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
 
     $badge_data = null;
     if ($badge_term) {
+        $existing_request = $this->loadExistingBadgeRequest((int) $this->currentUser->id(), (int) $badge_term->id());
+        $current_status = $existing_request instanceof NodeInterface && $existing_request->hasField('field_badge_status')
+          ? (string) ($existing_request->get('field_badge_status')->value ?? '')
+          : '';
+
         $checklist_url = '';
         if ($badge_term->hasField('field_badge_checklist') && !$badge_term->get('field_badge_checklist')->isEmpty()) {
             $checklist_url = $badge_term->get('field_badge_checklist')->first()->getUrl()->toString();
@@ -83,6 +89,7 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
             'checklist_url' => $checklist_url,
             'has_checklist' => !empty($checklist_url),
             'checkout_minutes' => '',
+            'current_status' => $current_status,
         ];
 
         if ($badge_term->hasField('field_badge_checkout_minutes') && !$badge_term->get('field_badge_checkout_minutes')->isEmpty()) {
@@ -114,7 +121,12 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
         $config = $this->configFactory->get('assign_badge_from_quiz.settings');
         $show_details_for_types = $config->get('show_badge_details') ?: [];
         if ($badge_term && in_array($quiz_type, $show_details_for_types, TRUE)) {
-            if (isset($context['badge']['checkout_requirement']) && $context['badge']['checkout_requirement'] !== 'no') {
+            $effective_status = (string) ($context['badge']['current_status'] ?? '');
+            $should_show_schedule = $effective_status !== ''
+              ? $effective_status === 'pending'
+              : isset($context['badge']['checkout_requirement']) && $context['badge']['checkout_requirement'] !== 'no';
+
+            if ($should_show_schedule) {
                 $controller_result['assign_badge_facilitator_schedule'] = $this->displayBuilder->buildFacilitatorSchedule($badge_term);
             }
         }
@@ -127,5 +139,29 @@ final class QuizResultPageSubscriber implements EventSubscriberInterface {
     }
 
     $event->setControllerResult($controller_result);
+  }
+
+  /**
+   * Loads the member's existing non-duplicate badge request for a badge term.
+   */
+  private function loadExistingBadgeRequest(int $uid, int $badge_tid): ?NodeInterface {
+    $nids = $this->entityTypeManager->getStorage('node')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'badge_request')
+      ->condition('status', 1)
+      ->condition('field_member_to_badge.target_id', $uid)
+      ->condition('field_badge_requested.target_id', $badge_tid)
+      ->condition('field_badge_status', ['duplicate', 'Rejected', 'rejected'], 'NOT IN')
+      ->sort('changed', 'DESC')
+      ->sort('nid', 'DESC')
+      ->range(0, 1)
+      ->execute();
+
+    if (!$nids) {
+      return NULL;
+    }
+
+    $node = $this->entityTypeManager->getStorage('node')->load((int) reset($nids));
+    return $node instanceof NodeInterface ? $node : NULL;
   }
 }

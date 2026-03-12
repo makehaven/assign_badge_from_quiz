@@ -4,6 +4,7 @@ namespace Drupal\assign_badge_from_quiz\Hook;
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\node\Entity\Node;
+use Drupal\node\NodeInterface;
 
 /**
  * Class for handling quiz result updates.
@@ -75,6 +76,59 @@ class QuizResultHook {
           $checkout_requirement = $badge_term->hasField('field_badge_checkout_requirement') ? $badge_term->get('field_badge_checkout_requirement')->value : 'no';
           $status = ($checkout_requirement == 'yes' || $checkout_requirement == 'class') ? 'pending' : 'active';
 
+          $existing_request = $this->loadExistingBadgeRequest((int) $user_id, (int) $badge_term->id());
+          if ($existing_request instanceof NodeInterface) {
+            $existing_status = trim((string) ($existing_request->get('field_badge_status')->value ?? ''));
+
+            if ($existing_status === 'expired') {
+              $existing_request->set('field_badge_status', 'active');
+              $existing_request->save();
+              \Drupal::logger('assign_badge_from_quiz')->notice(
+                'Reactivated expired badge request @nid for uid @uid badge @badge (tid @tid) after quiz retake.',
+                [
+                  '@nid' => $existing_request->id(),
+                  '@uid' => $user_id,
+                  '@badge' => $badge_name,
+                  '@tid' => $badge_term->id(),
+                ]
+              );
+              \Drupal::messenger()->addStatus(t('Your expired @badge badge has been reactivated.', [
+                '@badge' => $badge_name,
+              ]));
+              return;
+            }
+
+            if ($existing_status === 'active') {
+              \Drupal::messenger()->addStatus(t('You already have the @badge badge. Your quiz retake counted as a refresher.', [
+                '@badge' => $badge_name,
+              ]));
+              return;
+            }
+
+            if ($existing_status === 'pending') {
+              \Drupal::messenger()->addStatus(t('You already have a pending @badge badge request. No new request was created.', [
+                '@badge' => $badge_name,
+              ]));
+              return;
+            }
+
+            \Drupal::logger('assign_badge_from_quiz')->notice(
+              'Skipped duplicate badge request creation for uid @uid badge @badge (tid @tid) because an existing request @nid is in status @status.',
+              [
+                '@uid' => $user_id,
+                '@badge' => $badge_name,
+                '@tid' => $badge_term->id(),
+                '@nid' => $existing_request->id(),
+                '@status' => $existing_status ?: 'unknown',
+              ]
+            );
+            \Drupal::messenger()->addWarning(t('You already have a @badge badge record with status "@status". No new request was created.', [
+              '@badge' => $badge_name,
+              '@status' => $existing_status ?: 'unknown',
+            ]));
+            return;
+          }
+
           // Create a badge_request node.
           $badge_request = Node::create([
             'type' => 'badge_request',
@@ -97,5 +151,29 @@ class QuizResultHook {
         }
       }
     }
+  }
+
+  /**
+   * Loads the canonical existing badge request for a user and badge.
+   */
+  private function loadExistingBadgeRequest(int $user_id, int $badge_tid): ?NodeInterface {
+    $nids = \Drupal::entityQuery('node')
+      ->accessCheck(FALSE)
+      ->condition('type', 'badge_request')
+      ->condition('status', 1)
+      ->condition('field_member_to_badge.target_id', $user_id)
+      ->condition('field_badge_requested.target_id', $badge_tid)
+      ->condition('field_badge_status.value', ['duplicate', 'Rejected', 'rejected'], 'NOT IN')
+      ->sort('changed', 'DESC')
+      ->sort('nid', 'DESC')
+      ->range(0, 1)
+      ->execute();
+
+    if (!$nids) {
+      return NULL;
+    }
+
+    $node = Node::load((int) reset($nids));
+    return $node instanceof NodeInterface ? $node : NULL;
   }
 }

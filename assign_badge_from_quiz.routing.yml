@@ -30,6 +30,14 @@ assign_badge_from_quiz.tool_quality_report:
   requirements:
     _permission: 'access administration reports'
 
+assign_badge_from_quiz.tool_ai_quality_report:
+  path: '/admin/reports/tool-ai-quality'
+  defaults:
+    _controller: '\Drupal\assign_badge_from_quiz\Controller\QuizQualityReportController::toolAiQualityReport'
+    _title: 'Tool AI Quality Report'
+  requirements:
+    _permission: 'access administration reports'
+
 assign_badge_from_quiz.facilitator_setup_report:
   path: '/admin/reports/facilitator-setup-quality'
   defaults:

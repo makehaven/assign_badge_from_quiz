@@ -55,10 +55,18 @@ final class PostQuizRenderer implements TrustedCallbackInterface {
   private function processConditionalTokens(string $html, array $ctx): string {
     $checkout_req = $ctx['badge']['checkout_requirement'] ?? 'no';
     $has_checklist = $ctx['badge']['has_checklist'] ?? FALSE;
+    $current_status = (string) ($ctx['badge']['current_status'] ?? '');
+
+    $badge_requires_checkout = $current_status !== ''
+      ? $current_status === 'pending'
+      : in_array($checkout_req, ['yes', 'class'], TRUE);
+    $badge_is_earned = $current_status !== ''
+      ? $current_status === 'active'
+      : $checkout_req === 'no';
 
     $logic = [
-      'badge_requires_checkout' => in_array($checkout_req, ['yes', 'class']),
-      'badge_is_earned' => $checkout_req === 'no',
+      'badge_requires_checkout' => $badge_requires_checkout,
+      'badge_is_earned' => $badge_is_earned,
       'badge_has_checklist' => $has_checklist,
     ];
 

@@ -75,3 +75,32 @@
   color: #6b7280;
   font-size: 0.85rem;
 }
+
+.abfq-details {
+  margin-top: 0.35rem;
+}
+
+.abfq-details summary {
+  cursor: pointer;
+  color: #1f4b7a;
+  font-size: 0.85rem;
+}
+
+.abfq-compact-list {
+  margin: 0.25rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.abfq-compact-list li {
+  margin: 0.2rem 0;
+}
+
+.abfq-compact-list li > div + div {
+  margin-top: 0.15rem;
+}
+
+.abfq-compact-list li + li {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #e5e7eb;
+}
