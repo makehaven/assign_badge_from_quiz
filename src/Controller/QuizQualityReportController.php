@@ -184,8 +184,7 @@ class QuizQualityReportController extends ControllerBase {
       'quiz_quality' => $this->t('Quiz Quality'),
       'checkout_requirement' => $this->t('Checkout Requirement'),
       'checkout_minutes' => $this->t('Checkout Minutes'),
-      'checklist' => $this->t('Checklist'),
-      'internal_checklist' => $this->t('Internal Checklist'),
+      'checklist_items' => $this->t('Checklist Items'),
       'training_documentation' => $this->t('Training Documentation'),
       'video' => $this->t('Video'),
       'transcript' => $this->t('Transcript'),
@@ -270,8 +269,7 @@ class QuizQualityReportController extends ControllerBase {
         $checkout_minutes = (int) $term->get('field_badge_checkout_minutes')->value;
       }
 
-      $has_checklist = $term->hasField('field_badge_checklist') && !$term->get('field_badge_checklist')->isEmpty();
-      $has_internal_checklist = $term->hasField('field_badge_internal_checklist') && !$term->get('field_badge_internal_checklist')->isEmpty();
+      $items_count = ($term->hasField('field_badge_checklist_items') && !$term->get('field_badge_checklist_items')->isEmpty()) ? count($term->get('field_badge_checklist_items')->getValue()) : 0;
       $has_training_doc = $term->hasField('field_training_documentation') && !$term->get('field_training_documentation')->isEmpty();
       $has_access_control = $term->hasField('field_badge_access_control') && !$term->get('field_badge_access_control')->isEmpty();
       $prereq_count = ($term->hasField('field_badge_prerequisite') && !$term->get('field_badge_prerequisite')->isEmpty()) ? count($term->get('field_badge_prerequisite')->getValue()) : 0;
@@ -336,8 +334,7 @@ class QuizQualityReportController extends ControllerBase {
         ],
         'checkout_requirement' => $this->getCheckoutRequirementLabel($checkout_requirement),
         'checkout_minutes' => $checkout_minutes === NULL ? $this->t('Not set') : $checkout_minutes,
-        'checklist' => $has_checklist ? $this->t('Yes') : $this->t('No'),
-        'internal_checklist' => $has_internal_checklist ? $this->t('Yes') : $this->t('No'),
+        'checklist_items' => $items_count > 0 ? $this->t('@count items', ['@count' => $items_count]) : $this->t('Missing'),
         'training_documentation' => $has_training_doc ? $this->t('Yes') : $this->t('No'),
         'video' => $has_video ? $this->t('Yes') : $this->t('Optional'),
         'transcript' => ['data' => $transcript_cell],
@@ -596,9 +593,15 @@ class QuizQualityReportController extends ControllerBase {
       $checkout_minutes = (int) $term->get('field_badge_checkout_minutes')->value;
     }
     $has_checklist = $term->hasField('field_badge_checklist') && !$term->get('field_badge_checklist')->isEmpty();
+    $has_internal_checklist = ($term->hasField('field_badge_checklist_items') && !$term->get('field_badge_checklist_items')->isEmpty())
+      || ($term->hasField('field_badge_internal_checklist') && !$term->get('field_badge_internal_checklist')->isEmpty());
+
     if (in_array($checkout_requirement, ['yes', 'class'], TRUE)) {
-      if (!$has_checklist) {
+      if (!$has_checklist && !$has_internal_checklist) {
         $issues[] = (string) $this->t('Missing checklist for checkout flow');
+      }
+      if (!$has_internal_checklist && $has_checklist) {
+        $issues[] = (string) $this->t('External checklist not yet migrated to internal field');
       }
       if ($checkout_minutes === NULL || $checkout_minutes <= 0) {
         $issues[] = (string) $this->t('Missing/invalid checkout minutes');
