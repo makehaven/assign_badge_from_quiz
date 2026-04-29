@@ -1,0 +1,4 @@
+view assign badge from quiz reports:
+  title: 'View assign badge from quiz reports'
+  description: 'View quiz, badge, tool, and facilitator setup reports for badge automation workflows.'
+  restrict access: true
