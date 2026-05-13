@@ -33,12 +33,21 @@ class QuizResultHook {
           $badge_term = reset($terms);
           $badge_name = $badge_term->getName();
 
-          // Gate progression when documentation/prerequisites are configured.
+          // Gate progression. Two distinct gates:
+          //   - Prerequisites missing: hard stop — member can't receive any
+          //     form of this badge until the underlying prereqs are active.
+          //   - Documentation required but not approved: soft hold — the
+          //     badge request is still created (so the member can see their
+          //     quiz pass on their profile and on the badge page), but it
+          //     stays in `pending` regardless of checkout_requirement so the
+          //     schedule-checkout gate and any auto-activation path remains
+          //     blocked until staff approves the documentation form.
+          $docs_pending = FALSE;
           if (\Drupal::hasService('appointment_facilitator.badge_gate')) {
             /** @var \Drupal\appointment_facilitator\Service\BadgePrerequisiteGate $gate */
             $gate = \Drupal::service('appointment_facilitator.badge_gate');
             $gate_result = $gate->evaluate((int) $user_id, $badge_term);
-            if (!$gate_result['allowed']) {
+            if (!empty($gate_result['prerequisites_missing'])) {
               \Drupal::logger('assign_badge_from_quiz')->notice(
                 'Blocked badge request for uid @uid badge @badge (tid @tid). Reasons: @reasons',
                 [
@@ -52,16 +61,6 @@ class QuizResultHook {
               $messages[] = t('You passed the quiz, but you cannot receive the @badge badge yet.', [
                 '@badge' => $badge_name,
               ]);
-              if (!empty($gate_result['requires_documentation']) && empty($gate_result['documentation_approved'])) {
-                if (!empty($gate_result['documentation_form_url'])) {
-                  $messages[] = t('Next step: submit and get approval for your documentation form: @url', [
-                    '@url' => $gate_result['documentation_form_url'],
-                  ]);
-                }
-                else {
-                  $messages[] = t('Next step: submit and get approval for the required training documentation.');
-                }
-              }
               if (!empty($gate_result['prerequisites_missing_labels'])) {
                 $messages[] = t('Prerequisite badges still required (must be active): @badges', [
                   '@badges' => implode(', ', $gate_result['prerequisites_missing_labels']),
@@ -70,11 +69,25 @@ class QuizResultHook {
               \Drupal::messenger()->addWarning(implode(' ', $messages));
               return;
             }
+            if (!empty($gate_result['requires_documentation']) && empty($gate_result['documentation_approved'])) {
+              $docs_pending = TRUE;
+              $message = t('Quiz passed. Your @badge badge is pending staff approval of the training documentation form before you can schedule a facilitator checkout.', [
+                '@badge' => $badge_name,
+              ]);
+              if (!empty($gate_result['documentation_form_url']) && empty($gate_result['documentation_submitted'])) {
+                $message = t('Quiz passed. Submit the training documentation form for @badge — your badge stays pending until staff approves it.', [
+                  '@badge' => $badge_name,
+                ]);
+              }
+              \Drupal::messenger()->addWarning($message);
+            }
           }
 
-          // Determine checkout requirements.
+          // Determine checkout requirements. When docs are still pending we
+          // force `pending` regardless of checkout type so docs-gated badges
+          // never auto-activate via the no-checkout shortcut.
           $checkout_requirement = $badge_term->hasField('field_badge_checkout_requirement') ? $badge_term->get('field_badge_checkout_requirement')->value : 'no';
-          $status = ($checkout_requirement == 'yes' || $checkout_requirement == 'class') ? 'pending' : 'active';
+          $status = ($checkout_requirement == 'yes' || $checkout_requirement == 'class' || $docs_pending) ? 'pending' : 'active';
 
           $existing_request = $this->loadExistingBadgeRequest((int) $user_id, (int) $badge_term->id());
           if ($existing_request instanceof NodeInterface) {
