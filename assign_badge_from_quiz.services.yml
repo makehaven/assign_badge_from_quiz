@@ -34,3 +34,17 @@ services:
       - '@current_user'
     tags:
       - { name: event_subscriber }
+
+  assign_badge_from_quiz.documentation_action_tokens:
+    class: Drupal\assign_badge_from_quiz\Service\DocumentationActionTokenService
+    arguments: ['@config.factory', '@datetime.time']
+
+  assign_badge_from_quiz.documentation_notifier:
+    class: Drupal\assign_badge_from_quiz\Service\DocumentationNotifier
+    arguments:
+      - '@entity_type.manager'
+      - '@plugin.manager.mail'
+      - '@language_manager'
+      - '@keyvalue'
+      - '@logger.factory'
+      - '@assign_badge_from_quiz.documentation_action_tokens'

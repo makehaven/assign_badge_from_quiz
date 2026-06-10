@@ -28,3 +28,6 @@ assign_badge_from_quiz.settings:
     facilitator_schedule_view:
       type: string
       label: 'Facilitator schedule view and display'
+    doc_action_secret:
+      type: string
+      label: 'Per-site HMAC secret for documentation Approve/Reject email links'

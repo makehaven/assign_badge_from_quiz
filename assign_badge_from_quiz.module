@@ -1,7 +1,10 @@
 <?php
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Url;
 use Drupal\assign_badge_from_quiz\Hook\QuizResultHook;
+use Drupal\node\NodeInterface;
+use Drupal\webform\WebformSubmissionInterface;
 
 /**
  * Implements hook_quiz_result_insert().
@@ -15,4 +18,164 @@ function assign_badge_from_quiz_quiz_result_insert(EntityInterface $entity) {
  */
 function assign_badge_from_quiz_quiz_result_update(EntityInterface $entity) {
   \Drupal::service(QuizResultHook::class)->entityUpdate($entity);
+}
+/**
+ * Implements hook_theme().
+ */
+function assign_badge_from_quiz_theme($existing, $type, $theme, $path) {
+  return [
+    'assign_badge_from_quiz_doc_review_email' => [
+      'variables' => [
+        'tool' => '',
+        'member_name' => '',
+        'member_url' => '',
+        'experience' => '',
+        'file_links' => [],
+        'submission_url' => '',
+        'submitted_at' => '',
+        'action_links' => [],
+      ],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_mail().
+ *
+ * The member-facing "your documentation was approved, here's the next step"
+ * email. Plain text so it renders reliably everywhere.
+ */
+function assign_badge_from_quiz_mail($key, &$message, $params) {
+  if ($key !== 'documentation_approved') {
+    return;
+  }
+
+  $tool = $params['tool'] ?? 'the tool';
+  $message['subject'] = t('Your @tool documentation is approved — here is your next step', ['@tool' => $tool]);
+
+  $lines = [];
+  $lines[] = t('Hi @name,', ['@name' => $params['recipient_name'] ?? '']);
+  $lines[] = '';
+  $lines[] = t('Good news — your documentation for @tool has been approved.', ['@tool' => $tool]);
+  $lines[] = '';
+
+  if (empty($params['quiz_passed'])) {
+    $lines[] = t('Next step: take the @tool quiz (you need 100% to pass).', ['@tool' => $tool]);
+    if (!empty($params['quiz_url'])) {
+      $lines[] = $params['quiz_url'];
+    }
+    $lines[] = '';
+    $lines[] = t('After you pass the quiz, schedule an in-person checkout with a facilitator to earn the badge.');
+  }
+  else {
+    $lines[] = t('You have already passed the quiz. Last step: schedule an in-person checkout with a facilitator to earn the badge.');
+  }
+
+  if (!empty($params['badges_url'])) {
+    $lines[] = '';
+    $lines[] = t('See your badges and book a checkout here:');
+    $lines[] = $params['badges_url'];
+  }
+
+  $lines[] = '';
+  $lines[] = t('Questions? Just reply to this email.');
+
+  $message['body'][] = implode("\n", array_map('strval', $lines));
+}
+
+/**
+ * Implements hook_preprocess_HOOK() for webform_email_message_html.
+ *
+ * Enriches the staff notification email for documentation webforms (any badge
+ * term's field_training_documentation form) with the member account link, the
+ * stated experience, uploaded files, and signed Approve / Reject action links.
+ */
+function assign_badge_from_quiz_preprocess_webform_email_message_html(array &$variables) {
+  $submission = $variables['webform_submission'] ?? NULL;
+  if (!$submission instanceof WebformSubmissionInterface) {
+    return;
+  }
+
+  $badge_terms = _assign_badge_from_quiz_badge_terms_for_webform($submission->getWebform()->id());
+  if (!$badge_terms) {
+    return;
+  }
+  $badge = reset($badge_terms);
+
+  $data = $submission->getData();
+  $member = $submission->getOwner();
+
+  $member_url = '';
+  if ($member && (int) $member->id() > 0) {
+    try {
+      $member_url = $member->toUrl('canonical', ['absolute' => TRUE])->toString();
+    }
+    catch (\Throwable) {
+      $member_url = '';
+    }
+  }
+
+  // Uploaded documentation files (managed_file, single or multiple).
+  $file_links = [];
+  $fids = $data['documentation'] ?? [];
+  $fids = is_array($fids) ? $fids : [$fids];
+  foreach (array_filter($fids) as $fid) {
+    $file = \Drupal::entityTypeManager()->getStorage('file')->load((int) $fid);
+    if ($file) {
+      $file_links[] = [
+        'url' => \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri()),
+        'label' => $file->getFilename(),
+      ];
+    }
+  }
+
+  $submission_url = '';
+  try {
+    $submission_url = Url::fromRoute('entity.webform_submission.edit_form', [
+      'webform' => $submission->getWebform()->id(),
+      'webform_submission' => $submission->id(),
+    ], ['absolute' => TRUE])->toString();
+  }
+  catch (\Throwable) {
+    $submission_url = '';
+  }
+
+  /** @var \Drupal\assign_badge_from_quiz\Service\DocumentationNotifier $notifier */
+  $notifier = \Drupal::service('assign_badge_from_quiz.documentation_notifier');
+
+  $variables['message']['body'] = [
+    '#theme' => 'assign_badge_from_quiz_doc_review_email',
+    '#tool' => $badge->getName(),
+    '#member_name' => $member ? $member->getDisplayName() : t('(unknown)'),
+    '#member_url' => $member_url,
+    '#experience' => $data['experience'] ?? '',
+    '#file_links' => $file_links,
+    '#submission_url' => $submission_url,
+    '#submitted_at' => \Drupal::service('date.formatter')->format($submission->getCreatedTime(), 'short'),
+    '#action_links' => $notifier->buildActionLinks((int) $submission->id()),
+  ];
+}
+
+/**
+ * Load badge terms whose field_training_documentation points at this webform.
+ *
+ * @return \Drupal\taxonomy\TermInterface[]
+ */
+function _assign_badge_from_quiz_badge_terms_for_webform(string $webform_id): array {
+  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+  $nids = $node_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'webform')
+    ->condition('webform.target_id', $webform_id)
+    ->execute();
+  if (!$nids) {
+    return [];
+  }
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $tids = $term_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('vid', 'badges')
+    ->condition('field_training_documentation', $nids, 'IN')
+    ->execute();
+  return $tids ? $term_storage->loadMultiple($tids) : [];
 }

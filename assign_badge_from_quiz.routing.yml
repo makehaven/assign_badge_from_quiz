@@ -57,3 +57,16 @@ assign_badge_from_quiz.standardize_quiz_settings:
     parameters:
       quiz:
         type: entity:quiz
+
+assign_badge_from_quiz.doc_action:
+  path: '/badge-docs/action/{submission}/{action}/{token}'
+  defaults:
+    _form: '\Drupal\assign_badge_from_quiz\Form\DocumentationActionConfirmForm'
+    _title: 'Documentation review'
+  requirements:
+    # The HMAC token in the path is the authorization. Rendering the page (GET)
+    # has no side effect; only the CSRF-protected POST applies the change.
+    _access: 'TRUE'
+    submission: \d+
+    action: '^[a-z]+$'
+    token: '^[A-Za-z0-9_\-\.]+$'

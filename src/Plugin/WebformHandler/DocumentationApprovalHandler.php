@@ -60,7 +60,16 @@ class DocumentationApprovalHandler extends WebformHandlerBase {
       return;
     }
 
+    $notifier = \Drupal::hasService('assign_badge_from_quiz.documentation_notifier')
+      ? \Drupal::service('assign_badge_from_quiz.documentation_notifier')
+      : NULL;
+
     foreach ($badge_terms as $badge_term) {
+      // Tell the member they're approved and what to do next (deduped so a
+      // re-save of an already-approved submission won't re-notify).
+      if ($notifier) {
+        $notifier->sendApprovalEmailIfNeeded($member_uid, $badge_term, $webform_submission);
+      }
       $this->maybeCreateBadgeRequest($member_uid, $badge_term);
     }
   }
