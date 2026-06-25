@@ -5,6 +5,13 @@ assign_badge_from_quiz.settings:
   parent: system.admin_config_content
   weight: 50
 
+assign_badge_from_quiz.documentation_queue:
+  title: 'Documentation approvals'
+  description: 'Documentation-badge submissions still awaiting staff approval.'
+  parent: system.admin_reports
+  route_name: assign_badge_from_quiz.documentation_queue
+  weight: 9
+
 assign_badge_from_quiz.quality_report:
   title: 'Quiz Quality Report'
   description: 'Monitor badge quiz quality (question count, feedback, and settings standardization).'

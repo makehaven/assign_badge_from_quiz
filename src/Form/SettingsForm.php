@@ -152,6 +152,28 @@ final class SettingsForm extends ConfigFormBase {
         '#default_value' => $failure_template['value'] ?? $default_failure_template,
     ];
 
+    $form['documentation_reminder_settings'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Documentation approval reminders'),
+      '#description' => $this->t('A throttled digest that re-surfaces documentation-badge submissions still waiting for approval, so a missed one-shot notification email is not the only signal. See the live queue at <a href=":url">Reports → Documentation approvals</a>.', [
+        ':url' => '/admin/reports/badge-documentation',
+      ]),
+      '#open' => TRUE,
+    ];
+    $form['documentation_reminder_settings']['reminder_interval_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Reminder interval (days)'),
+      '#description' => $this->t('How often, at most, to email the "still waiting" digest. Set to 0 to turn the digest off. The digest only sends when something is actually pending.'),
+      '#min' => 0,
+      '#max' => 90,
+      '#default_value' => $cfg->get('reminder_interval_days') ?? 1,
+    ];
+    $form['documentation_reminder_settings']['reminder_recipient'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Reminder recipient'),
+      '#description' => $this->t('Email address that receives the digest. Defaults to jrlogan@makehaven.org.'),
+      '#default_value' => $cfg->get('reminder_recipient') ?: 'jrlogan@makehaven.org',
+    ];
 
     return parent::buildForm($form, $form_state);
   }
@@ -189,6 +211,8 @@ final class SettingsForm extends ConfigFormBase {
       ->set('show_badge_details', $show_details)
       ->set('failure_template', $failure_template)
       ->set('facilitator_schedule_view', $form_state->getValue('facilitator_schedule_view'))
+      ->set('reminder_interval_days', (int) $form_state->getValue('reminder_interval_days'))
+      ->set('reminder_recipient', trim((string) $form_state->getValue('reminder_recipient')))
       ->save();
 
     parent::submitForm($form, $form_state);

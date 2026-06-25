@@ -46,6 +46,42 @@ function assign_badge_from_quiz_theme($existing, $type, $theme, $path) {
  * email. Plain text so it renders reliably everywhere.
  */
 function assign_badge_from_quiz_mail($key, &$message, $params) {
+  // The "still waiting" reminder digest (see DocumentationReminder).
+  if ($key === 'documentation_pending_digest') {
+    $count = (int) ($params['count'] ?? 0);
+    $message['subject'] = \Drupal::translation()->formatPlural(
+      $count,
+      '1 documentation approval is waiting',
+      '@count documentation approvals are waiting',
+    );
+    $lines = [];
+    $lines[] = (string) \Drupal::translation()->formatPlural(
+      $count,
+      'There is 1 documentation submission still waiting for your approval:',
+      'There are @count documentation submissions still waiting for your approval:',
+    );
+    $lines[] = '';
+    foreach ($params['items'] ?? [] as $item) {
+      $lines[] = '• ' . t('@badge — @member (submitted @age ago)', [
+        '@badge' => $item['badge'] ?? '',
+        '@member' => $item['member'] ?? '',
+        '@age' => $item['age'] ?? '',
+      ]);
+      if (!empty($item['submission_url'])) {
+        $lines[] = '    ' . t('Review: @url', ['@url' => $item['submission_url']]);
+      }
+      foreach ($item['action_links'] ?? [] as $link) {
+        $lines[] = '    ' . $link['label'] . ': ' . $link['url'];
+      }
+      $lines[] = '';
+    }
+    $lines[] = t('Or see the full queue: @url', [
+      '@url' => \Drupal\Core\Url::fromRoute('assign_badge_from_quiz.documentation_queue', [], ['absolute' => TRUE])->toString(),
+    ]);
+    $message['body'][] = implode("\n", array_map('strval', $lines));
+    return;
+  }
+
   if ($key !== 'documentation_approved') {
     return;
   }
@@ -178,4 +214,20 @@ function _assign_badge_from_quiz_badge_terms_for_webform(string $webform_id): ar
     ->condition('field_training_documentation', $nids, 'IN')
     ->execute();
   return $tids ? $term_storage->loadMultiple($tids) : [];
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Drives the throttled "still waiting" documentation-approval digest. The
+ * service self-throttles to the configured interval, so calling it every cron
+ * run is cheap and safe.
+ */
+function assign_badge_from_quiz_cron() {
+  try {
+    \Drupal::service('assign_badge_from_quiz.documentation_reminder')->maybeSendDigest();
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('assign_badge_from_quiz')->error('Documentation reminder digest failed: @msg', ['@msg' => $e->getMessage()]);
+  }
 }

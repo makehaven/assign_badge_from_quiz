@@ -58,6 +58,14 @@ assign_badge_from_quiz.standardize_quiz_settings:
       quiz:
         type: entity:quiz
 
+assign_badge_from_quiz.documentation_queue:
+  path: '/admin/reports/badge-documentation'
+  defaults:
+    _controller: '\Drupal\assign_badge_from_quiz\Controller\DocumentationQueueController::queue'
+    _title: 'Documentation approvals'
+  requirements:
+    _permission: 'view assign badge from quiz reports'
+
 assign_badge_from_quiz.doc_action:
   path: '/badge-docs/action/{submission}/{action}/{token}'
   defaults:

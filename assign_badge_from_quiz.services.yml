@@ -48,3 +48,22 @@ services:
       - '@keyvalue'
       - '@logger.factory'
       - '@assign_badge_from_quiz.documentation_action_tokens'
+
+  assign_badge_from_quiz.pending_documentation_finder:
+    class: Drupal\assign_badge_from_quiz\Service\PendingDocumentationFinder
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+
+  assign_badge_from_quiz.documentation_reminder:
+    class: Drupal\assign_badge_from_quiz\Service\DocumentationReminder
+    arguments:
+      - '@assign_badge_from_quiz.pending_documentation_finder'
+      - '@assign_badge_from_quiz.documentation_notifier'
+      - '@config.factory'
+      - '@state'
+      - '@plugin.manager.mail'
+      - '@language_manager'
+      - '@date.formatter'
+      - '@logger.factory'
+      - '@datetime.time'

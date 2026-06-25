@@ -31,3 +31,9 @@ assign_badge_from_quiz.settings:
     doc_action_secret:
       type: string
       label: 'Per-site HMAC secret for documentation Approve/Reject email links'
+    reminder_interval_days:
+      type: integer
+      label: 'Documentation approval reminder interval (days; 0 disables)'
+    reminder_recipient:
+      type: string
+      label: 'Documentation approval reminder recipient email'
