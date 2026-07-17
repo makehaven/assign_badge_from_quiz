@@ -155,12 +155,6 @@ class QuizResultHook {
           // --- REMOVED MESSENGER NOTIFICATION ---
           // \Drupal::messenger()->addMessage("Badge request created for $badge_name", "status");
 
-          // The special case for the orientation quiz can remain if needed,
-          // but consider making this a configurable field on the badge itself.
-          if ($quiz_id == 1) {
-              $message = "<a href='/schedule' class='btn btn-primary btn-lg' style='font-size: 1.5rem; padding: 15px 30px; border-radius: 10px;'>Schedule Your Orientation Session</a>";
-              \Drupal::messenger()->addMessage($message, "status");
-          }
         }
       }
     }
