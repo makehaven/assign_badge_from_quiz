@@ -43,6 +43,7 @@ class QuizResultHook {
           //     schedule-checkout gate and any auto-activation path remains
           //     blocked until staff approves the documentation form.
           $docs_pending = FALSE;
+          $class_covers_docs = FALSE;
           if (\Drupal::hasService('appointment_facilitator.badge_gate')) {
             /** @var \Drupal\appointment_facilitator\Service\BadgePrerequisiteGate $gate */
             $gate = \Drupal::service('appointment_facilitator.badge_gate');
@@ -69,7 +70,16 @@ class QuizResultHook {
               \Drupal::messenger()->addWarning(implode(' ', $messages));
               return;
             }
-            if (!empty($gate_result['requires_documentation']) && empty($gate_result['documentation_approved'])) {
+            if (!empty($gate_result['requires_documentation'])
+              && empty($gate_result['documentation_approved'])
+              && !empty($gate_result['class_registration_satisfies_docs'])) {
+              // Registered for a class that issues this badge: the class
+              // includes the checkout and the instructor activates the badge
+              // from the class-checkout page. No documentation form needed.
+              // (Message emitted below, only if the request ends up pending.)
+              $class_covers_docs = TRUE;
+            }
+            elseif (!empty($gate_result['requires_documentation']) && empty($gate_result['documentation_approved'])) {
               $docs_pending = TRUE;
               $message = t('Quiz passed. Your @badge badge is pending staff approval of the training documentation form before you can schedule a facilitator checkout.', [
                 '@badge' => $badge_name,
@@ -119,6 +129,37 @@ class QuizResultHook {
             }
 
             if ($existing_status === 'pending') {
+              // The instructor already signed off on the in-person portion
+              // (class checkout) and was only waiting on this quiz pass: the
+              // class is the checkout, so the badge activates now.
+              if ($existing_request->hasField('field_class_completed_date')
+                && !$existing_request->get('field_class_completed_date')->isEmpty()
+                && !$docs_pending) {
+                $existing_request->set('field_badge_status', 'active');
+                $existing_request->setNewRevision(TRUE);
+                $existing_request->setRevisionLogMessage('Activated: quiz passed after instructor class checkout.');
+                $existing_request->save();
+                \Drupal::logger('assign_badge_from_quiz')->notice(
+                  'Activated badge request @nid for uid @uid badge @badge (tid @tid): quiz passed after class checkout on @date.',
+                  [
+                    '@nid' => $existing_request->id(),
+                    '@uid' => $user_id,
+                    '@badge' => $badge_name,
+                    '@tid' => $badge_term->id(),
+                    '@date' => $existing_request->get('field_class_completed_date')->value,
+                  ]
+                );
+                \Drupal::messenger()->addStatus(t('Your @badge badge is now active — your instructor had already completed your class checkout.', [
+                  '@badge' => $badge_name,
+                ]));
+                return;
+              }
+              if ($class_covers_docs) {
+                \Drupal::messenger()->addStatus(t('Quiz passed. Your @badge badge stays pending until your instructor completes the class checkout — no documentation form is needed because your class includes the badging session.', [
+                  '@badge' => $badge_name,
+                ]));
+                return;
+              }
               \Drupal::messenger()->addStatus(t('You already have a pending @badge badge request. No new request was created.', [
                 '@badge' => $badge_name,
               ]));
@@ -151,6 +192,12 @@ class QuizResultHook {
             'field_member_to_badge' => ['target_id' => $user_id],
           ]);
           $badge_request->save();
+
+          if ($class_covers_docs && $status === 'pending') {
+            \Drupal::messenger()->addStatus(t('Quiz passed. Your @badge badge stays pending until your instructor completes the class checkout — no documentation form is needed because your class includes the badging session.', [
+              '@badge' => $badge_name,
+            ]));
+          }
 
           // --- REMOVED MESSENGER NOTIFICATION ---
           // \Drupal::messenger()->addMessage("Badge request created for $badge_name", "status");
