@@ -4,6 +4,7 @@ description: 'Provides a custom Rules action to assign a badge based on quiz res
 package: Makerspace
 core_version_requirement: ^10 || ^11
 dependencies:
+  - appointment_facilitator:appointment_facilitator
   - rules:rules
 version: '1.0'
 configure: assign_badge_from_quiz.settings

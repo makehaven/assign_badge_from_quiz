@@ -78,3 +78,19 @@ The module's functionality is split into two main parts:
     * The service builds a comprehensive render array based on the quiz score and the linked badge's requirements (e.g., fetching facilitator schedules).
     * The subscriber then injects this entire display into the main content of the page, ensuring it works across all themes without manual block placement.
 ```
+
+## Two-stage badge prerequisites
+
+Configured prerequisite badges must be published and pending or earned before
+an advanced badge request or checkout appointment is available. Only earned
+prerequisites (active, or legacy blank status) permit final activation. A
+facilitator can approve both in one visit by approving prerequisites first.
+Class checkout retains its completion record while the badge awaits prerequisites.
+
+The shared `appointment_facilitator.badge_gate` checks requests and appointments
+through `evaluate()` / `evaluatePrerequisites(..., TRUE)` and awards through
+`evaluatePrerequisites()` with the default strict mode. Badge node presave also
+enforces transitions, including automated/API saves; callers must handle a
+blocked award before saving. Ordinary edits to existing earned or legacy blank
+badges remain valid; there is no retrospective revocation. Renewals and changing
+a badge's member or badge identity are new awards and are checked.

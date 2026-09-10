@@ -33,20 +33,20 @@ class QuizResultHook {
           $badge_term = reset($terms);
           $badge_name = $badge_term->getName();
 
-          // Gate progression. Two distinct gates:
-          //   - Prerequisites missing: hard stop — member can't receive any
-          //     form of this badge until the underlying prereqs are active.
-          //   - Documentation required but not approved: soft hold — the
-          //     badge request is still created (so the member can see their
-          //     quiz pass on their profile and on the badge page), but it
-          //     stays in `pending` regardless of checkout_requirement so the
-          //     schedule-checkout gate and any auto-activation path remains
-          //     blocked until staff approves the documentation form.
+          // Pending prerequisites allow requests, but only earned prerequisites
+          // allow activation. Unapproved documentation also holds the request
+          // pending until staff approval or the existing class-checkout flow.
+          $prerequisites_pending = FALSE;
           $docs_pending = FALSE;
           $class_covers_docs = FALSE;
           if (\Drupal::hasService('appointment_facilitator.badge_gate')) {
             /** @var \Drupal\appointment_facilitator\Service\BadgePrerequisiteGate $gate */
             $gate = \Drupal::service('appointment_facilitator.badge_gate');
+            // Existing awards are not requalified under newly added rules.
+            if ($gate->memberHasActiveOrBlankBadge((int) $user_id, (int) $badge_term->id())) {
+              \Drupal::messenger()->addStatus(t('You already have the @badge badge. Your quiz retake counted as a refresher.', ['@badge' => $badge_name]));
+              return;
+            }
             $gate_result = $gate->evaluate((int) $user_id, $badge_term);
             if (!empty($gate_result['prerequisites_missing'])) {
               \Drupal::logger('assign_badge_from_quiz')->notice(
@@ -63,12 +63,19 @@ class QuizResultHook {
                 '@badge' => $badge_name,
               ]);
               if (!empty($gate_result['prerequisites_missing_labels'])) {
-                $messages[] = t('Prerequisite badges still required (must be active): @badges', [
+                $messages[] = t('First get these prerequisite badges pending or earned: @badges', [
                   '@badges' => implode(', ', $gate_result['prerequisites_missing_labels']),
                 ]);
               }
               \Drupal::messenger()->addWarning(implode(' ', $messages));
               return;
+            }
+            $prerequisites_pending = !empty($gate_result['prerequisites_pending']);
+            if ($prerequisites_pending) {
+              \Drupal::messenger()->addStatus(t('Your prerequisite badges are pending. Your facilitator must approve @prerequisites before approving @badge; both can be checked out in the same visit.', [
+                '@badge' => $badge_name,
+                '@prerequisites' => implode(', ', $gate_result['prerequisites_pending_labels']),
+              ]));
             }
             if (!empty($gate_result['requires_documentation'])
               && empty($gate_result['documentation_approved'])
@@ -97,13 +104,17 @@ class QuizResultHook {
           // force `pending` regardless of checkout type so docs-gated badges
           // never auto-activate via the no-checkout shortcut.
           $checkout_requirement = $badge_term->hasField('field_badge_checkout_requirement') ? $badge_term->get('field_badge_checkout_requirement')->value : 'no';
-          $status = ($checkout_requirement == 'yes' || $checkout_requirement == 'class' || $docs_pending) ? 'pending' : 'active';
+          $status = ($checkout_requirement == 'yes' || $checkout_requirement == 'class' || $docs_pending || $prerequisites_pending) ? 'pending' : 'active';
 
           $existing_request = $this->loadExistingBadgeRequest((int) $user_id, (int) $badge_term->id());
           if ($existing_request instanceof NodeInterface) {
             $existing_status = trim((string) ($existing_request->get('field_badge_status')->value ?? ''));
 
             if ($existing_status === 'expired') {
+              if ($prerequisites_pending) {
+                \Drupal::messenger()->addWarning(t('Your @badge badge cannot be reactivated until its prerequisite badges are earned.', ['@badge' => $badge_name]));
+                return;
+              }
               $existing_request->set('field_badge_status', 'active');
               $existing_request->save();
               \Drupal::logger('assign_badge_from_quiz')->notice(
@@ -129,27 +140,26 @@ class QuizResultHook {
             }
 
             if ($existing_status === 'pending') {
-              // The instructor already signed off on the in-person portion
-              // (class checkout) and was only waiting on this quiz pass: the
-              // class is the checkout, so the badge activates now.
-              if ($existing_request->hasField('field_class_completed_date')
-                && !$existing_request->get('field_class_completed_date')->isEmpty()
-                && !$docs_pending) {
+              // Activate after class checkout or for a quiz-only badge, once
+              // documentation and earned prerequisites are also satisfied.
+              $class_complete = $existing_request->hasField('field_class_completed_date')
+                && !$existing_request->get('field_class_completed_date')->isEmpty();
+              if (($class_complete || $checkout_requirement === 'no')
+                && !$docs_pending && !$prerequisites_pending) {
                 $existing_request->set('field_badge_status', 'active');
                 $existing_request->setNewRevision(TRUE);
-                $existing_request->setRevisionLogMessage('Activated: quiz passed after instructor class checkout.');
+                $existing_request->setRevisionLogMessage('Activated: quiz passed and checkout/prerequisite requirements met.');
                 $existing_request->save();
                 \Drupal::logger('assign_badge_from_quiz')->notice(
-                  'Activated badge request @nid for uid @uid badge @badge (tid @tid): quiz passed after class checkout on @date.',
+                  'Activated badge request @nid for uid @uid badge @badge (tid @tid): quiz and checkout/prerequisite requirements met.',
                   [
                     '@nid' => $existing_request->id(),
                     '@uid' => $user_id,
                     '@badge' => $badge_name,
                     '@tid' => $badge_term->id(),
-                    '@date' => $existing_request->get('field_class_completed_date')->value,
                   ]
                 );
-                \Drupal::messenger()->addStatus(t('Your @badge badge is now active — your instructor had already completed your class checkout.', [
+                \Drupal::messenger()->addStatus(t('Your @badge badge is now active — the quiz, checkout and prerequisite requirements are complete.', [
                   '@badge' => $badge_name,
                 ]));
                 return;

@@ -145,7 +145,7 @@ class DocumentationApprovalHandler extends WebformHandlerBase {
     $checkout_requirement = $badge_term->hasField('field_badge_checkout_requirement')
       ? $badge_term->get('field_badge_checkout_requirement')->value
       : 'no';
-    $status = ($checkout_requirement === 'yes' || $checkout_requirement === 'class') ? 'pending' : 'active';
+    $status = ($checkout_requirement === 'yes' || $checkout_requirement === 'class' || !empty($gate_result['prerequisites_pending'])) ? 'pending' : 'active';
 
     $badge_request = Node::create([
       'type' => 'badge_request',
