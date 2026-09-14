@@ -54,6 +54,8 @@ services:
     arguments:
       - '@database'
       - '@entity_type.manager'
+      # Optional: a class registration stands in for the documentation form.
+      - '@?appointment_facilitator.badge_gate'
 
   assign_badge_from_quiz.documentation_reminder:
     class: Drupal\assign_badge_from_quiz\Service\DocumentationReminder

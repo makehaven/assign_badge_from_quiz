@@ -112,6 +112,13 @@ class DocumentationQueueController extends ControllerBase {
         '<strong>@count</strong> documentation submissions are waiting for your approval.',
       ),
     ];
+    $build['scope'] = [
+      '#type' => 'html_tag',
+      '#tag' => 'p',
+      '#value' => $this->t('Not listed: members who already hold the badge, and members registered for a class that awards it. The class stands in for this form and the instructor\'s class checkout issues the badge; classes still owing badges are on the <a href=":url">Education console</a>.', [
+        ':url' => '/admin/education#badges-owed',
+      ]),
+    ];
     $build['table'] = [
       '#type' => 'table',
       '#header' => [
