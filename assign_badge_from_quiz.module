@@ -67,11 +67,11 @@ function assign_badge_from_quiz_mail($key, &$message, $params) {
         '@member' => $item['member'] ?? '',
         '@age' => $item['age'] ?? '',
       ]);
+      // Only the submission link: approving straight from the email meant
+      // approving work nobody had looked at (feedback #43068). Approve and
+      // reject live on the submission and the queue page.
       if (!empty($item['submission_url'])) {
-        $lines[] = '    ' . t('Review: @url', ['@url' => $item['submission_url']]);
-      }
-      foreach ($item['action_links'] ?? [] as $link) {
-        $lines[] = '    ' . $link['label'] . ': ' . $link['url'];
+        $lines[] = '    ' . t('Review the submission: @url', ['@url' => $item['submission_url']]);
       }
       $lines[] = '';
     }
