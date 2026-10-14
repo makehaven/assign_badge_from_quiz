@@ -189,7 +189,7 @@ class QuizQualityReportController extends ControllerBase {
       'video' => $this->t('Video'),
       'transcript' => $this->t('Transcript'),
       'prerequisites' => $this->t('Prerequisites'),
-      'issuers' => $this->t('Issuers'),
+      'issuers' => $this->t('Facilitator Coverage'),
       'access_control' => $this->t('Access Control'),
       'status' => $this->t('Status Flags'),
       'quality' => $this->t('Quality Status'),
@@ -220,6 +220,11 @@ class QuizQualityReportController extends ControllerBase {
         '#empty' => $this->t('No badge terms found.'),
       ];
     }
+
+    // Coverage counts current facilitators: enabled accounts with the
+    // facilitator role and current or upcoming facilitator hours. The issuer
+    // fields keep people who have since stepped back.
+    $current_facilitators = $this->loadCurrentFacilitatorNames();
 
     /** @var \Drupal\taxonomy\TermInterface[] $terms */
     $terms = $storage->loadMultiple($tids);
@@ -273,7 +278,19 @@ class QuizQualityReportController extends ControllerBase {
       $has_training_doc = $term->hasField('field_training_documentation') && !$term->get('field_training_documentation')->isEmpty();
       $has_access_control = $term->hasField('field_badge_access_control') && !$term->get('field_badge_access_control')->isEmpty();
       $prereq_count = ($term->hasField('field_badge_prerequisite') && !$term->get('field_badge_prerequisite')->isEmpty()) ? count($term->get('field_badge_prerequisite')->getValue()) : 0;
-      $issuer_count = ($term->hasField('field_badge_issuer') && !$term->get('field_badge_issuer')->isEmpty()) ? count($term->get('field_badge_issuer')->getValue()) : 0;
+      $listed_issuer_uids = [];
+      foreach (['field_badge_issuer', 'field_badge_issuer_on_request'] as $issuer_field) {
+        if ($term->hasField($issuer_field)) {
+          foreach ($term->get($issuer_field)->getValue() as $item) {
+            if (!empty($item['target_id'])) {
+              $listed_issuer_uids[(int) $item['target_id']] = TRUE;
+            }
+          }
+        }
+      }
+      $current_issuer_names = array_intersect_key($current_facilitators, $listed_issuer_uids);
+      natcasesort($current_issuer_names);
+      $other_issuer_count = count($listed_issuer_uids) - count($current_issuer_names);
       $is_inactive = $term->hasField('field_badge_inactive') && (bool) $term->get('field_badge_inactive')->value;
       $is_unlisted = $term->hasField('field_badge_unlisted') && (bool) $term->get('field_badge_unlisted')->value;
       $is_published = method_exists($term, 'isPublished') ? (bool) $term->isPublished() : TRUE;
@@ -339,7 +356,20 @@ class QuizQualityReportController extends ControllerBase {
         'video' => $has_video ? $this->t('Yes') : $this->t('Optional'),
         'transcript' => ['data' => $transcript_cell],
         'prerequisites' => $prereq_count,
-        'issuers' => $issuer_count,
+        'issuers' => [
+          'data' => [
+            '#type' => 'inline_template',
+            '#template' => '<strong>{{ count }}</strong>{% if names %}: {{ names }}{% endif %}{% if others %}<br><small>{{ others }}</small>{% endif %}',
+            '#context' => [
+              'count' => count($current_issuer_names),
+              'names' => implode(', ', $current_issuer_names),
+              'others' => $other_issuer_count > 0
+                ? $this->formatPlural($other_issuer_count, '+1 listed issuer without current hours', '+@count listed issuers without current hours')
+                : '',
+            ],
+          ],
+          'data-sort-value' => count($current_issuer_names),
+        ],
         'access_control' => $has_access_control ? $this->t('Yes') : $this->t('No'),
         'status' => [
           'data' => [
@@ -1371,6 +1401,7 @@ class QuizQualityReportController extends ControllerBase {
 
     $header = [
       'facilitator' => $this->t('Facilitator'),
+      'focus' => $this->t('Focus Area'),
       'badge_issuer' => $this->t('Can Badge On Things'),
       'issuer_breakdown' => $this->t('Issuer Coverage'),
       'coordinator_profile' => $this->t('Facilitator Profile'),
@@ -1477,6 +1508,9 @@ class QuizQualityReportController extends ControllerBase {
 
       $rows[] = [
         'facilitator' => Link::fromTextAndUrl($user->getDisplayName(), Url::fromRoute('entity.user.edit_form', ['user' => $user->id()])),
+        'focus' => $coordinator_profile && $coordinator_profile->hasField('field_coordinator_focus')
+          ? (string) $coordinator_profile->get('field_coordinator_focus')->value
+          : '',
         'badge_issuer' => [
           'data' => $this->buildIndicatorWithLink(
             $issuer_counts['total'] > 0,
@@ -1844,6 +1878,29 @@ class QuizQualityReportController extends ControllerBase {
     }
 
     return $state;
+  }
+
+  /**
+   * Returns display names of current facilitators, keyed by user ID.
+   *
+   * Current means an enabled account with the facilitator role whose
+   * facilitator hours are ongoing or still ahead.
+   */
+  protected function loadCurrentFacilitatorNames(): array {
+    $user_storage = $this->entityTypeManager()->getStorage('user');
+    $uids = $user_storage->getQuery()
+      ->condition('status', 1)
+      ->condition('roles', 'facilitator')
+      ->accessCheck(FALSE)
+      ->execute();
+    $names = [];
+    foreach ($user_storage->loadMultiple($uids) as $user) {
+      $schedule = $this->getCoordinatorScheduleState($this->loadUserProfile($user, 'coordinator'));
+      if ($schedule['has_upcoming']) {
+        $names[(int) $user->id()] = $user->getDisplayName();
+      }
+    }
+    return $names;
   }
 
   /**

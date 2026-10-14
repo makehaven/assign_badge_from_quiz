@@ -69,3 +69,8 @@ services:
       - '@date.formatter'
       - '@logger.factory'
       - '@datetime.time'
+
+  assign_badge_from_quiz.route_subscriber:
+    class: Drupal\assign_badge_from_quiz\Routing\RouteSubscriber
+    tags:
+      - { name: event_subscriber }
