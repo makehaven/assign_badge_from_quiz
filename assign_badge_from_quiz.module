@@ -1,6 +1,7 @@
 <?php
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 use Drupal\assign_badge_from_quiz\Hook\QuizResultHook;
 use Drupal\node\NodeInterface;
@@ -214,6 +215,39 @@ function _assign_badge_from_quiz_badge_terms_for_webform(string $webform_id): ar
     ->condition('field_training_documentation', $nids, 'IN')
     ->execute();
   return $tids ? $term_storage->loadMultiple($tids) : [];
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for quiz_questions_form.
+ *
+ * Once a quiz has attempts, contrib hides the Save button on Manage
+ * questions and explains why in one line under the table. Staff dragged
+ * questions, got "You have unsaved changes" and no way to save (2026-07).
+ * Put the explanation at the top as a warning and say how to get unstuck.
+ */
+function assign_badge_from_quiz_form_quiz_questions_form_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
+  if (!isset($form['revision_help'])) {
+    return;
+  }
+  $quiz = \Drupal::routeMatch()->getParameter('quiz');
+  if (!is_object($quiz)) {
+    return;
+  }
+  $edit_url = Url::fromRoute('entity.quiz.edit_form', ['quiz' => $quiz->id()], [
+    'query' => ['destination' => Url::fromRoute('<current>')->toString()],
+  ]);
+  $form['revision_help'] = [
+    '#theme' => 'status_messages',
+    '#message_list' => [
+      'warning' => [
+        t('Members have already taken this quiz, so changes on this page, including the question order, cannot be saved here. To reorder or change questions, <a href=":edit">edit the quiz</a>, tick "Create new revision" and save, then come back to this page. Past results stay with the old revision.', [
+          ':edit' => $edit_url->toString(),
+        ]),
+      ],
+    ],
+    '#status_headings' => ['warning' => t('Warning message')],
+    '#weight' => -100,
+  ];
 }
 
 /**
